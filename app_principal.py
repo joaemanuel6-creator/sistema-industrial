@@ -1,40 +1,62 @@
-# --- GESTIÓN DE SESIÓN (ADAPTADO A TU EXCEL) ---
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+from streamlit_gsheets import GSheetsConnection
+
+# 1. ESTO DEBE IR PRIMERO QUE TODO
+st.set_page_config(page_title="SISTEMA INDUSTRIAL PRO", layout="wide")
+
+# 2. INICIALIZAR LA SESIÓN (Para que no salga el error de la línea 2)
+if "autenticado" not in st.session_state:
+    st.session_state.update({
+        "autenticado": False, 
+        "user_data": {}, 
+        "modulo_activo": "COPELAS"
+    })
+
+# 3. CONEXIÓN A GOOGLE (Asegúrate de que en Secrets esté el enlace)
+def conectar_drive():
+    return st.connection("gsheets", type=GSheetsConnection)
+
+def leer_tabla(nombre_pestaña):
+    try:
+        conn = conectar_drive()
+        # ttl=0 obliga a Streamlit a leer el Excel real y no una copia vieja
+        return conn.read(worksheet=nombre_pestaña, ttl=0)
+    except Exception as e:
+        st.error(f"No se encontró la pestaña '{nombre_pestaña}'. Revisa el nombre en tu Excel.")
+        return pd.DataFrame()
+
+# 4. AHORA SÍ EL LOGIN (Ya no dará error en st.session_state)
 if not st.session_state.autenticado:
-    st.title("🔐 ACCESO AL SISTEMA INDUSTRIAL")
+    st.title("🔐 ACCESO AL SISTEMA")
     with st.form("login"):
-        u = st.text_input("👤 ID DE USUARIO (Columna B)").strip()
-        p = st.text_input("🔑 CONTRASEÑA (Columna C)", type="password")
-        
+        u = st.text_input("👤 ID DE USUARIO").strip()
+        p = st.text_input("🔑 CONTRASEÑA", type="password")
         if st.form_submit_button("INGRESAR"):
             df_usuarios = leer_tabla("USUARIO")
-            
             if not df_usuarios.empty:
-                # 1. Aseguramos que los nombres coincidan con tu Excel (mayúsculas/minúsculas y Ñ)
-                # Limpiamos espacios en blanco por si acaso
+                # Ajustamos los nombres de columnas de tu Excel
                 df_usuarios.columns = df_usuarios.columns.str.strip()
+                u_col = 'ID'
+                p_col = 'Contraseña' # Con la Ñ como en tu Excel
                 
-                # 2. Verificamos que existan las columnas ID y Contraseña
-                if 'ID' in df_usuarios.columns and 'Contraseña' in df_usuarios.columns:
-                    # Convertimos a texto para comparar sin errores
-                    df_usuarios['ID'] = df_usuarios['ID'].astype(str).str.strip()
-                    df_usuarios['Contraseña'] = df_usuarios['Contraseña'].astype(str).str.strip()
+                if u_col in df_usuarios.columns and p_col in df_usuarios.columns:
+                    df_usuarios[u_col] = df_usuarios[u_col].astype(str).str.strip()
+                    df_usuarios[p_col] = df_usuarios[p_col].astype(str).str.strip()
                     
-                    # 3. Buscamos al usuario
-                    user = df_usuarios[(df_usuarios['ID'] == u) & (df_usuarios['Contraseña'] == p)]
-                    
+                    user = df_usuarios[(df_usuarios[u_col] == u) & (df_usuarios[p_col] == p)]
                     if not user.empty:
                         st.session_state.autenticado = True
                         st.session_state.user_data = user.iloc[0].to_dict()
-                        st.success(f"✅ Bienvenido, {st.session_state.user_data.get('Nombres')}!")
                         st.rerun()
                     else:
-                        st.error("❌ Usuario o Contraseña incorrectos.")
+                        st.error("❌ Usuario o Contraseña incorrectos")
                 else:
-                    st.error("⚠️ No se encontraron las columnas 'ID' o 'Contraseña' en el Excel.")
-            else:
-                st.error("⚠️ La pestaña 'USUARIO' está vacía o no se puede leer.")
+                    st.error(f"⚠️ Las columnas '{u_col}' o '{p_col}' no existen en la pestaña USUARIO.")
     st.stop()
-elif mod == "CRISOLES": modulo_crisoles()
-elif mod == "MEZCLA": modulo_mezcla()
-else: st.title(f"📂 MÓDULO {mod} EN CONSTRUCCIÓN")
+
+# --- SI LLEGA AQUÍ, ES QUE YA SE LOGUEÓ ---
+st.success(f"Bienvenido {st.session_state.user_data.get('Nombres')}")
+
 
