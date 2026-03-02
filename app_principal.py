@@ -25,3 +25,4 @@ if st.sidebar.button("📂 REGISTRO COPELAS"):
     # Llamamos a la función pasándole lo necesario
     ventana_registro_copelas(st.session_state.user_data['Nombres'], guardar_datos)
 
+
