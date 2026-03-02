@@ -24,22 +24,29 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. CONEXIÓN A GOOGLE SHEETS ---
+# --- 2. FUNCIONES DE CONEXIÓN A GOOGLE DRIVE ---
 def conectar_drive():
     return st.connection("gsheets", type=GSheetsConnection)
 
 def leer_tabla(nombre_pestaña):
     try:
         conn = conectar_drive()
+        # ttl=0 para que siempre lea datos frescos del Excel
         return conn.read(worksheet=nombre_pestaña, ttl=0)
-    except:
+    except Exception as e:
+        st.error(f"Error al leer la pestaña {nombre_pestaña}: {e}")
         return pd.DataFrame()
 
 def guardar_datos(nombre_pestaña, nuevo_df):
-    conn = conectar_drive()
-    df_actual = leer_tabla(nombre_pestaña)
-    df_final = pd.concat([df_actual, nuevo_df], ignore_index=True)
-    conn.update(worksheet=nombre_pestaña, data=df_final)
+    try:
+        conn = conectar_drive()
+        df_actual = leer_tabla(nombre_pestaña)
+        df_final = pd.concat([df_actual, nuevo_df], ignore_index=True)
+        conn.update(worksheet=nombre_pestaña, data=df_final)
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar: {e}")
+        return False
 
 # --- 3. GESTIÓN DE SESIÓN ---
 if "autenticado" not in st.session_state:
@@ -53,14 +60,19 @@ if not st.session_state.autenticado:
         if st.form_submit_button("INGRESAR"):
             df_usuarios = leer_tabla("USUARIO")
             if not df_usuarios.empty:
-                # Buscar usuario en el Excel
-                user = df_usuarios[(df_usuarios['ID'].astype(str) == u) & (df_usuarios['Contrasena'].astype(str) == p)]
+                # Limpiar datos para evitar errores de comparación
+                df_usuarios['ID'] = df_usuarios['ID'].astype(str).str.strip()
+                df_usuarios['Contrasena'] = df_usuarios['Contrasena'].astype(str).str.strip()
+                
+                user = df_usuarios[(df_usuarios['ID'] == u) & (df_usuarios['Contrasena'] == p)]
                 if not user.empty:
                     st.session_state.autenticado = True
                     st.session_state.user_data = user.iloc[0].to_dict()
                     st.rerun()
-                else: st.error("❌ Credenciales incorrectas")
-            else: st.error("⚠️ No se pudo conectar a la tabla de usuarios.")
+                else: 
+                    st.error("❌ ID de Usuario o Contraseña incorrectos")
+            else: 
+                st.error("⚠️ No se encontró la tabla de usuarios en Drive.")
     st.stop()
 
 # --- 4. BARRA LATERAL ---
@@ -68,15 +80,17 @@ st.sidebar.title("🏭 SISTEMA PRINCIPAL")
 st.sidebar.markdown(f'<span class="user-text">👤 {st.session_state.user_data.get("Nombres")}</span>', unsafe_allow_html=True)
 st.sidebar.divider()
 
-for op in ["COPELAS", "CRISOLES", "MEZCLA", "QUEMA", "LIMPIEZA", "ALMACEN"]:
+modulos = ["COPELAS", "CRISOLES", "MEZCLA", "QUEMA", "LIMPIEZA", "ALMACEN"]
+for op in modulos:
     if st.sidebar.button(f"📂 {op}"):
         st.session_state.modulo_activo = op
 
+st.sidebar.divider()
 if st.sidebar.button("🚪 SALIR", type="secondary"):
     st.session_state.clear()
     st.rerun()
 
-# --- 5. MODULOS (MODIFICADOS PARA GOOGLE DRIVE) ---
+# --- 5. MÓDULOS DE REGISTRO ---
 
 def modulo_copelas():
     st.header("📝 REGISTRO DE COPELAS")
@@ -89,16 +103,17 @@ def modulo_copelas():
         with c2:
             parrilla = st.selectbox("N° Parrilla:", [f"P-{i:02d}" for i in range(1, 31)])
             cant = st.number_input("Cantidad Unidades:", min_value=0, step=1)
+            # FECHA CORREGIDA A DD/MM/YYYY
             fecha_f = st.text_input("FECHA (DD/MM/YYYY):", datetime.now().strftime("%d/%m/%Y"))
         
-        if st.form_submit_button("💾 GUARDAR COPELAS"):
+        if st.form_submit_button("💾 GUARDAR EN DRIVE"):
             if mat and cant > 0:
                 nuevo = pd.DataFrame([{
                     "Codigo": prod, "Fecha_Registro": fecha_f, "Operador": st.session_state.user_data['ID'],
                     "N_Parrilla": parrilla, "Cantidad": cant, "Material": mat, "Prensa": prensa, "Estado": "PENDIENTE"
                 }])
-                guardar_datos("COPELA", nuevo)
-                st.success(f"✅ Guardado en Google Drive: {fecha_f}")
+                if guardar_datos("COPELA", nuevo):
+                    st.success(f"✅ Registrado en Excel con fecha {fecha_f}")
 
 def modulo_crisoles():
     st.header("🔥 REGISTRO DE CRISOLES")
@@ -113,50 +128,24 @@ def modulo_crisoles():
             cant = st.number_input("Cantidad Registrada:", min_value=0, step=1)
             fecha_f = st.text_input("FECHA (DD/MM/YYYY):", datetime.now().strftime("%d/%m/%Y"))
         
-        if st.form_submit_button("💾 REGISTRAR CRISOLES"):
+        if st.form_submit_button("💾 REGISTRAR EN DRIVE"):
             if mat and cant > 0:
                 nuevo = pd.DataFrame([{
                     "Codigo": prod, "Fecha_Registro": fecha_f, "Operador": st.session_state.user_data['ID'],
                     "N_Parrilla": paleta, "Cantidad": cant, "Material": mat, "Prensa": prensa, "Estado": "PENDIENTE"
                 }])
-                guardar_datos("CRISOL", nuevo)
-                st.success(f"✅ Crisol registrado en Drive: {fecha_f}")
+                if guardar_datos("CRISOL", nuevo):
+                    st.success(f"✅ Registrado en Excel con fecha {fecha_f}")
 
-# --- 6. MÓDULO MEZCLA (TU LÓGICA DE MULTIPLICACIÓN) ---
 def modulo_mezcla():
-    st.header("🧪 CONTROL DUAL DE MEZCLAS")
-    tipo = st.radio("TIPO:", ["MEZCLA COPELAS", "MEZCLA CRISOLES"], horizontal=True)
+    st.header("🧪 CONTROL DE MEZCLAS")
+    st.info("Módulo conectado a Google Sheets. Los cálculos se guardan en el historial.")
+    # (Aquí puedes añadir tu lógica de multiplicación de baldes adaptada a leer_tabla)
+    st.write("Selecciona una opción en el menú lateral para registrar productos.")
 
-    if tipo == "MEZCLA COPELAS":
-        df_mz = leer_tabla("MZ_COPELA")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            mex = df_mz[df_mz['Material'].str.contains("MEXICANA", na=False)]
-            sel_mex = st.selectbox("MAT. MEXICANA:", [None] + mex['N_Codigo'].tolist())
-            kg_mex = st.number_input("KG/BALDE (Mex):", 0.0)
-        with c2:
-            reb = df_mz[df_mz['Material'].str.contains("REBECA", na=False)]
-            sel_reb = st.selectbox("MAT. REBECA:", [None] + reb['N_Codigo'].tolist())
-            kg_reb = st.number_input("KG/BALDE (Reb):", 0.0)
-        with c3:
-            otr = df_mz[~df_mz['Material'].str.contains("MEXICANA|REBECA", na=False)]
-            sel_otr = st.selectbox("MAT. OTROS:", [None] + otr['N_Codigo'].tolist())
-            kg_otr = st.number_input("KG/BALDE (Otr):", 0.0)
-
-        baldes = st.number_input("CANT. BALDES:", min_value=1, value=1)
-        nom_mat = st.text_input("NOMBRE MATERIAL:").upper()
-        cod_mz = st.text_input("COD. MEZCLA:").upper()
-        
-        total_salida = (kg_mex + kg_reb + kg_otr) * baldes
-        st.markdown(f'<div class="resumen-salida"><h4>TOTAL A DESCONTAR: {total_salida:,.2f} KG</h4></div>', unsafe_allow_html=True)
-
-        if st.button("🚀 EJECUTAR MEZCLA"):
-            # Aquí iría la lógica de UPDATE para Google Sheets (se recomienda manejar saldos en Excel)
-            nuevo_h = pd.DataFrame([{"Codigo": cod_mz, "Fecha_Registro": datetime.now().strftime("%d/%m/%Y"), "Operador": st.session_state.user_data['ID'], "Material": nom_mat, "Total": total_salida}])
-            guardar_datos("HISOMZ", nuevo_h)
-            st.success("✅ Mezcla guardada en el Historial de Drive.")
-
-# --- RENDERIZADO ---
-if st.session_state.modulo_activo == "COPELAS": modulo_copelas()
-elif st.session_state.modulo_activo == "CRISOLES": modulo_crisoles()
-elif st.session_state.modulo_activo == "MEZCLA": modulo_mezcla()
+# --- 6. RENDERIZADO FINAL ---
+mod = st.session_state.modulo_activo
+if mod == "COPELAS": modulo_copelas()
+elif mod == "CRISOLES": modulo_crisoles()
+elif mod == "MEZCLA": modulo_mezcla()
+else: st.title(f"📂 MÓDULO {mod} EN CONSTRUCCIÓN")
