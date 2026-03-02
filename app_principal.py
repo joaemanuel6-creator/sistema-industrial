@@ -16,8 +16,16 @@ def conectar_drive():
     return st.connection("gsheets", type=GSheetsConnection)
 
 def leer_tabla(nombre):
-    conn = conectar_drive()
-    return conn.read(worksheet=nombre, ttl=0)
+    try:
+        conn = conectar_drive()
+        # Intentamos leer la pestaña específica
+        return conn.read(worksheet=nombre, ttl=0)
+    except Exception as e:
+        st.error(f"❌ Error de conexión con Google Sheets.")
+        st.info("Revisa que el archivo sea Público y que el link en Secrets termine en /edit")
+        # Esto imprimirá el error real en la pantalla para que lo veas
+        st.write(f"Detalle técnico: {e}")
+        return pd.DataFrame()
 
 def guardar_datos(nombre, df_nuevo):
     conn = conectar_drive()
@@ -58,5 +66,6 @@ if st.sidebar.button("🚪 CERRAR SESIÓN"):
 
 st.title("Panel Principal")
 st.write("Bienvenido al sistema de control industrial.")
+
 
 
