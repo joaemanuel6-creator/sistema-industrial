@@ -1,10 +1,17 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+from streamlit_gsheets import GSheetsConnection
 # Importamos la función del otro archivo
 from copela import ventana_registro_copelas 
 
-# Configuración de conexión
+st.set_page_config(page_title="SISTEMA INDUSTRIAL", layout="wide")
+
+# 1. INICIALIZAR SESIÓN (Para que no de error de atributo)
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+    st.session_state.user_data = {}
+
+# 2. FUNCIONES DE BASE DE DATOS
 def conectar_drive():
     return st.connection("gsheets", type=GSheetsConnection)
 
@@ -19,10 +26,37 @@ def guardar_datos(nombre, df_nuevo):
     conn.update(worksheet=nombre, data=df_final)
     return True
 
-# --- SIDEBAR ---
-st.sidebar.title("MENÚ")
-if st.sidebar.button("📂 REGISTRO COPELAS"):
-    # Llamamos a la función pasándole lo necesario
+# 3. LÓGICA DE LOGIN (BLOQUEO)
+if not st.session_state.autenticado:
+    st.title("🔐 INICIO DE SESIÓN")
+    with st.form("login"):
+        u = st.text_input("Usuario")
+        p = st.text_input("Contraseña", type="password")
+        if st.form_submit_button("Entrar"):
+            df_user = leer_tabla("USUARIO")
+            # Validación simple (ajusta según tus columnas)
+            match = df_user[(df_user['ID'].astype(str) == u) & (df_user['Contraseña'].astype(str) == p)]
+            if not match.empty:
+                st.session_state.autenticado = True
+                st.session_state.user_data = match.iloc[0].to_dict()
+                st.rerun()
+            else:
+                st.error("Credenciales incorrectas")
+    st.stop() # DETIENE EL CÓDIGO AQUÍ SI NO ESTÁ LOGUEADO
+
+# 4. MENU LATERAL (SOLO SE VE SI PASÓ EL LOGIN)
+st.sidebar.title("🏭 MENÚ")
+st.sidebar.write(f"Operario: {st.session_state.user_data['Nombres']}")
+
+if st.sidebar.button("📂 REGISTRO COPELAS", use_container_width=True):
+    # Ahora sí, user_data ya existe y tiene datos
     ventana_registro_copelas(st.session_state.user_data['Nombres'], guardar_datos)
+
+if st.sidebar.button("🚪 CERRAR SESIÓN"):
+    st.session_state.clear()
+    st.rerun()
+
+st.title("Panel Principal")
+st.write("Bienvenido al sistema de control industrial.")
 
 
