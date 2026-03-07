@@ -6,13 +6,13 @@ import os
 import requests
 import json
 
-# --- CONFIGURACIÓN ---
-URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbyMjLXjtHgApvfRYaybrbyoOox6wFhh-EtY4ny3lLmUHHiGUpPpwoY0WooHDHKN6Yyo/exec"
+# --- URL ACTUALIZADA ---
+URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbyv9E4-o66w0jkgDf7Ber0souEQ0jFTnFGIQrRVtiod7rm0YE7cdu23XHCx_0GLbYxZ/exec"
 
 class RegistroCopelas:
     def __init__(self, root_parent, nombre_usuario):
         self.ventana = tk.Toplevel(root_parent)
-        self.ventana.title("SISTEMA INDUSTRIAL - REGISTRO DE COPELAS")
+        self.ventana.title("SISTEMA INDUSTRIAL - GESTIÓN DE COPELAS")
         self.nombre_usuario = nombre_usuario
         
         self.directorio = os.path.dirname(os.path.abspath(__file__))
@@ -21,11 +21,17 @@ class RegistroCopelas:
         self.ventana.state('zoomed') 
         self.ventana.configure(bg="#1e272e")
 
-        # --- ESTILOS ---
+        # --- CONFIGURACIÓN DE ESTILOS ---
         self.estilo = ttk.Style()
         self.estilo.theme_use('clam')
+        
+        # Estilo para evitar el fondo blanco en los Combobox
+        self.estilo.configure("TCombobox", fieldbackground="#2c3e50", background="#2c3e50", foreground="white")
+        self.estilo.map("TCombobox", fieldbackground=[('readonly', '#2c3e50')], foreground=[('readonly', 'white')])
+        
+        # Estilo de la Tabla (Listbox)
         self.estilo.configure("Treeview", background="#2c3e50", foreground="white", fieldbackground="#2c3e50", rowheight=25)
-        self.estilo.heading("Treeview", background="#34495e", foreground="white", font=("Arial", 10, "bold"))
+        self.estilo.heading("Treeview", background="#10ac84", foreground="white", font=("Arial", 10, "bold"))
         self.estilo.map("Treeview", background=[('selected', '#10ac84')])
 
         self.inicializar_db()
@@ -53,15 +59,14 @@ class RegistroCopelas:
                 if res and (str(res[0]) == "1"):
                     self.btn_modificar.config(state="normal")
                     self.btn_eliminar.config(state="normal")
-        except:
-            pass
+        except: pass
 
     def enviar_a_nube(self, payload):
         try:
-            # Forzamos el envío como JSON para Google Apps Script
+            # Enviamos como JSON para Google Apps Script
             response = requests.post(URL_API_GOOGLE, json=payload, timeout=10)
-            print(f"Respuesta Google: {response.status_code}")
-            return response.status_code == 200
+            print(f"Respuesta Google: {response.text}")
+            return "OK" in response.text or response.status_code == 200
         except Exception as e:
             print(f"Error Nube: {e}")
             return False
@@ -83,7 +88,7 @@ class RegistroCopelas:
                 "prensa": "PRENSA-1"
             }
 
-            # 1. Guardar Local
+            # 1. Guardar Localmente
             with sqlite3.connect(self.db_name) as conn:
                 cur = conn.cursor()
                 cur.execute("""INSERT INTO COPELA (Codigo, Fecha_Registro, Operador, N_Parrilla, Cantidad, Material, Prensa, Estado) 
@@ -92,50 +97,52 @@ class RegistroCopelas:
                              datos["cantidad"], datos["material"], datos["prensa"], "SINCRONIZADO"))
                 conn.commit()
             
-            # 2. Guardar Nube
-            self.enviar_a_nube(datos)
-            
-            # 3. Actualizar interfaz
+            # 2. Intentar registrar en Google Sheets
+            if self.enviar_a_nube(datos):
+                print("Sincronización exitosa")
+            else:
+                print("Fallo sincronización nube")
+
             self.cargar_datos_tabla()
             self.ent_mat.delete(0, tk.END)
             self.ent_uni.delete(0, tk.END)
-            messagebox.showinfo("Éxito", "Registro completado")
+            messagebox.showinfo("Éxito", "Registro guardado.")
             
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo registrar: {e}")
+            messagebox.showerror("Error", f"Error: {e}")
 
     def crear_interfaz(self):
-        # Configuramos la cuadrícula de la ventana principal
         self.ventana.columnconfigure(0, weight=1)
-        self.ventana.rowconfigure(1, weight=1) # La tabla (fila 1) se expandirá
+        self.ventana.rowconfigure(1, weight=1)
 
-        # --- SECCIÓN 1: ENTRADA (ARRIBA) ---
-        f_superior = tk.Frame(self.ventana, bg="#1e272e", pady=20)
-        f_superior.grid(row=0, column=0, sticky="ew")
+        # --- PARTE SUPERIOR: FORMULARIO ---
+        f_top = tk.Frame(self.ventana, bg="#1e272e", pady=15)
+        f_top.grid(row=0, column=0, sticky="ew", padx=20)
 
-        tk.Label(f_superior, text="CÓDIGO:", fg="white", bg="#1e272e").grid(row=0, column=0, padx=5)
-        self.cb_prod = ttk.Combobox(f_superior, values=["Cod-7C", "Cod-8C", "Cod-9C"], state="readonly", width=10)
+        # Labels informativos arriba de cada campo
+        campos = [("CÓDIGO", 0), ("MATERIAL", 1), ("CANTIDAD", 2), ("FECHA", 3)]
+        for texto, col in campos:
+            tk.Label(f_top, text=texto, fg="cyan", bg="#1e272e", font=("Arial", 8, "bold")).grid(row=0, column=col)
+
+        self.cb_prod = ttk.Combobox(f_top, values=["Cod-7C", "Cod-8C", "Cod-9C"], state="readonly", width=12)
         self.cb_prod.set("Cod-7C")
-        self.cb_prod.grid(row=0, column=1, padx=5)
+        self.cb_prod.grid(row=1, column=0, padx=5)
 
-        tk.Label(f_superior, text="MATERIAL:", fg="white", bg="#1e272e").grid(row=0, column=2, padx=5)
-        self.ent_mat = tk.Entry(f_superior, bg="#2c3e50", fg="white", width=15)
-        self.ent_mat.grid(row=0, column=3, padx=5)
+        self.ent_mat = tk.Entry(f_top, bg="#2c3e50", fg="white", insertbackground="white", font=("Arial", 11))
+        self.ent_mat.grid(row=1, column=1, padx=5)
 
-        tk.Label(f_superior, text="CANT:", fg="white", bg="#1e272e").grid(row=0, column=4, padx=5)
-        self.ent_uni = tk.Entry(f_superior, bg="#2c3e50", fg="white", width=8)
-        self.ent_uni.grid(row=0, column=5, padx=5)
+        self.ent_uni = tk.Entry(f_top, bg="#2c3e50", fg="white", insertbackground="white", font=("Arial", 11), width=10)
+        self.ent_uni.grid(row=1, column=2, padx=5)
 
-        tk.Label(f_superior, text="FECHA:", fg="white", bg="#1e272e").grid(row=0, column=6, padx=5)
-        self.ent_fec_reg = tk.Entry(f_superior, bg="#2c3e50", fg="white", width=12)
+        self.ent_fec_reg = tk.Entry(f_top, bg="#2c3e50", fg="white", font=("Arial", 11), width=12)
         self.ent_fec_reg.insert(0, datetime.now().strftime("%d/%m/%Y"))
-        self.ent_fec_reg.grid(row=0, column=7, padx=5)
+        self.ent_fec_reg.grid(row=1, column=3, padx=5)
 
-        tk.Button(f_superior, text="GUARDAR", bg="#10ac84", fg="white", width=12, command=self.registrar_datos).grid(row=0, column=8, padx=15)
+        tk.Button(f_top, text="GUARDAR", bg="#10ac84", fg="white", font=("Arial", 10, "bold"), width=15, command=self.registrar_datos).grid(row=1, column=4, padx=10)
 
-        # --- SECCIÓN 2: TABLA (CENTRO) ---
+        # --- PARTE CENTRAL: TABLA (LISTBOX) ---
         f_tabla = tk.Frame(self.ventana, bg="#1e272e")
-        f_tabla.grid(row=1, column=0, sticky="nsew", padx=20)
+        f_tabla.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
         
         f_tabla.columnconfigure(0, weight=1)
         f_tabla.rowconfigure(0, weight=1)
@@ -143,25 +150,26 @@ class RegistroCopelas:
         columnas = ("ID", "COD", "FECHA", "OPERADOR", "PARR", "CANT", "MAT", "PRENSA", "ESTADO")
         self.tabla = ttk.Treeview(f_tabla, columns=columnas, show="headings")
         
-        # Scrollbar
-        scrollbar = ttk.Scrollbar(f_tabla, orient="vertical", command=self.tabla.yview)
-        self.tabla.configure(yscrollcommand=scrollbar.set)
+        sy = ttk.Scrollbar(f_tabla, orient="vertical", command=self.tabla.yview)
+        sx = ttk.Scrollbar(f_tabla, orient="horizontal", command=self.tabla.xview)
+        self.tabla.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
 
         for col in columnas:
             self.tabla.heading(col, text=col)
-            self.tabla.column(col, width=100, anchor="center")
+            self.tabla.column(col, width=90, anchor="center")
 
         self.tabla.grid(row=0, column=0, sticky="nsew")
-        scrollbar.grid(row=0, column=1, sticky="ns")
+        sy.grid(row=0, column=1, sticky="ns")
+        sx.grid(row=1, column=0, sticky="ew")
 
-        # --- SECCIÓN 3: BOTONES ADMIN (ABAJO) ---
-        f_inferior = tk.Frame(self.ventana, bg="#1e272e", pady=20)
-        f_inferior.grid(row=2, column=0, sticky="ew")
+        # --- PARTE INFERIOR: PANEL ADMIN ---
+        f_bot = tk.Frame(self.ventana, bg="#1e272e", pady=20)
+        f_bot.grid(row=2, column=0, sticky="ew")
 
-        self.btn_modificar = tk.Button(f_inferior, text="🔧 MODIFICAR", bg="#f39c12", fg="white", width=20, state="disabled")
+        self.btn_modificar = tk.Button(f_bot, text="🔧 MODIFICAR", bg="#f39c12", fg="white", width=20, state="disabled")
         self.btn_modificar.grid(row=0, column=0, padx=20)
 
-        self.btn_eliminar = tk.Button(f_inferior, text="🗑️ ELIMINAR", bg="#e74c3c", fg="white", width=20, state="disabled")
+        self.btn_eliminar = tk.Button(f_bot, text="🗑️ ELIMINAR", bg="#e74c3c", fg="white", width=20, state="disabled")
         self.btn_eliminar.grid(row=0, column=1, padx=20)
 
     def cargar_datos_tabla(self):
@@ -170,14 +178,12 @@ class RegistroCopelas:
             with sqlite3.connect(self.db_name) as conn:
                 cur = conn.cursor()
                 cur.execute("SELECT * FROM COPELA ORDER BY N_Codigo DESC")
-                for fila in cur.fetchall():
-                    self.tabla.insert("", "end", values=fila)
-        except:
-            pass
+                for r in cur.fetchall(): self.tabla.insert("", "end", values=r)
+        except: pass
 
 if __name__ == "__main__":
     root = tk.Tk()
     root.withdraw()
-    # Cambia "MANUEL" por el usuario del login
+    # Asegúrate de que el usuario "MANUEL" exista en la tabla USUARIO con rango 1
     app = RegistroCopelas(root, "MANUEL") 
     root.mainloop()
