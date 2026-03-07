@@ -2,56 +2,69 @@ import streamlit as st
 import pandas as pd
 
 # 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(page_title="SISTEMA INDUSTRIAL", layout="wide", page_icon="🏭")
+st.set_page_config(page_title="SISTEMA INDUSTRIAL PRO", layout="wide", page_icon="🏭")
 
 # ID de tu documento de Google Sheets
 SHEET_ID = "1dKqjZESRQ8pDmILv58u8ARm5Vowix185NudbaeUNfLI"
 
-# 2. ESTILOS CSS PARA LA BARRA LATERAL
+# 2. DISEÑO DE FONDO Y ESTILOS PROFESIONALES (CSS)
 st.markdown("""
     <style>
-    /* Ajustes para el Sidebar */
+    /* Fondo degradado industrial */
+    .stApp {
+        background: linear-gradient(135deg, #1e272e 0%, #2c3e50 100%);
+        color: white;
+    }
+    
+    /* Estilo de la barra lateral */
     [data-testid="stSidebar"] {
-        background-color: #f0f2f6;
-        padding-top: 20px;
+        background-color: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(10px);
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
     }
+
     .titulo-sidebar {
-        font-size: 28px !important;
+        font-size: 24px !important;
         font-weight: 900;
-        color: #1E272E;
-        line-height: 1;
-        margin-bottom: 5px;
+        color: #00d2ff;
+        text-align: center;
+        margin-bottom: 0px;
+        text-transform: uppercase;
     }
+
     .usuario-sidebar {
-        font-size: 18px;
-        color: #0083B0;
-        font-weight: bold;
+        font-size: 16px;
+        color: #ffffff;
+        text-align: center;
+        background: rgba(0, 210, 255, 0.2);
+        padding: 5px;
+        border-radius: 5px;
         margin-bottom: 20px;
     }
-    .area-titulo {
-        font-size: 18px;
-        font-weight: bold;
-        color: #2c3e50;
-        margin-top: 15px;
-    }
-    /* Estilo de enlaces de texto en la sidebar */
+
+    /* Botones tipo enlace en Sidebar */
     .stButton > button {
         border: none !important;
         background: none !important;
-        color: #4b4b4b !important;
+        color: #d1d8e0 !important;
         text-align: left !important;
-        padding: 2px 0px !important;
-        font-size: 15px !important;
-        transition: 0.2s;
+        width: 100%;
+        font-size: 14px !important;
+        transition: 0.3s;
     }
     .stButton > button:hover {
-        color: #0083B0 !important;
-        text-decoration: underline !important;
+        color: #00d2ff !important;
+        transform: translateX(5px);
+    }
+
+    /* Títulos de secciones en blanco */
+    h1, h2, h3, p {
+        color: white !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# 3. FUNCIÓN DE DATOS
+# 3. FUNCIÓN DE DATOS REFORZADA
 def leer_hoja_directo(nombre_pestaña):
     try:
         url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={nombre_pestaña}"
@@ -65,40 +78,41 @@ def leer_hoja_directo(nombre_pestaña):
 if "autenticado" not in st.session_state:
     st.session_state.update({"autenticado": False, "usuario": "", "permisos": [], "sub_modulo": None})
 
-# 5. LOGIN (Pantalla Central)
+# 5. LOGIN PROFESIONAL
 if not st.session_state.autenticado:
-    st.markdown("<h1 style='text-align: center;'>SISTEMA INDUSTRIAL</h1>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1.5, 1])
+    st.markdown("<h1 style='text-align: center; color: #00d2ff !important;'>SISTEMA INDUSTRIAL</h1>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        with st.form("login"):
-            u_id = st.text_input("ID de Usuario")
-            u_pass = st.text_input("Contraseña", type="password")
-            if st.form_submit_button("INGRESAR"):
+        with st.form("login_industrial"):
+            u_id = st.text_input("ID DE USUARIO")
+            u_pass = st.text_input("CONTRASEÑA", type="password")
+            if st.form_submit_button("ACCEDER AL PANEL"):
                 df_u = leer_hoja_directo("USUARIO")
                 if not df_u.empty:
                     valido = df_u[(df_u['ID'].astype(str) == u_id) & (df_u['CONTRASEÑA'].astype(str) == u_pass)]
                     if not valido.empty:
                         st.session_state.autenticado = True
                         st.session_state.usuario = valido.iloc[0].get('NOMBRES', u_id)
-                        # Cargamos permisos donde el valor sea 1 (Asegúrate que en Excel digan 1)
-                        st.session_state.permisos = [col for col in valido.iloc[0].index if str(valido.iloc[0][col]) == '1']
+                        # Lógica flexible para permisos (detecta 1 como número o como texto)
+                        fila = valido.iloc[0]
+                        st.session_state.permisos = [col for col in fila.index if str(fila[col]) == '1']
                         st.rerun()
-                    else: st.error("Acceso denegado")
+                    else: st.error("Credenciales incorrectas")
     st.stop()
 
-# 6. TODO A LA IZQUIERDA (SIDEBAR)
+# 6. PANEL LATERAL (SIDEBAR)
 with st.sidebar:
     st.markdown('<p class="titulo-sidebar">SISTEMA PRINCIPAL</p>', unsafe_allow_html=True)
-    st.markdown(f'<p class="usuario-sidebar">USUARIO: {st.session_state.usuario}</p>', unsafe_allow_html=True)
+    st.markdown(f'<p class="usuario-sidebar">👤 {st.session_state.usuario}</p>', unsafe_allow_html=True)
     
     if st.button("🚪 CERRAR SESIÓN"):
         st.session_state.clear()
         st.rerun()
     
     st.divider()
-    st.markdown("### 🛠 ÁREAS")
+    st.markdown("### 🧭 NAVEGACIÓN")
 
-    # Definición de Áreas y Sub-opciones
+    # Estructura Completa
     areas_data = {
         "COPELAS": ["Registro de Copelas"],
         "CRISOLES": ["Registro de Crisoles"],
@@ -115,28 +129,36 @@ with st.sidebar:
         "OBSERVACION": ["Registros Observaciones"]
     }
 
-    # Mostrar Áreas como Expander (Desplegables) en la Sidebar
+    # Dibujar Menú de Áreas
     for area, opciones in areas_data.items():
+        # Verificación de seguridad: Se muestra si está en la lista de permisos
         if area in st.session_state.permisos:
-            with st.expander(f"📁 {area}"):
+            with st.expander(f"📁 {area}", expanded=False):
                 for opt in opciones:
                     if st.button(f"➤ {opt}", key=f"btn_{opt}"):
                         st.session_state.sub_modulo = opt
 
-# 7. CONTENIDO CENTRAL (DERECHA)
+# 7. ÁREA CENTRAL DE TRABAJO
 if st.session_state.sub_modulo:
-    st.title(f"📍 {st.session_state.sub_modulo}")
-    st.write(f"Cargando información del módulo: {st.session_state.sub_modulo}")
+    st.markdown(f"<h2 style='color: #00d2ff !important;'>📍 {st.session_state.sub_modulo}</h2>", unsafe_allow_html=True)
+    st.divider()
     
-    # Ejemplo: Si el usuario hace clic en Kardex, mostramos datos
-    if "Kardex" in st.session_state.sub_modulo:
-        df_datos = leer_hoja_directo("ALMACEN")
-        st.dataframe(df_datos, use_container_width=True)
+    # Aquí puedes agregar la lógica de cada pestaña
+    if "COPELAS" in st.session_state.sub_modulo or "CRISOLES" in st.session_state.sub_modulo:
+        st.info("Cargando base de datos de producción...")
+        # Ejemplo: Mostrar historial de esa área
+        df_prod = leer_hoja_directo(st.session_state.sub_modulo.split()[-1].upper())
+        if not df_prod.empty:
+            st.dataframe(df_prod, use_container_width=True)
     
-    # Botón para limpiar pantalla central
-    if st.button("Limpiar Pantalla"):
+    if st.button("⬅ VOLVER AL INICIO"):
         st.session_state.sub_modulo = None
         st.rerun()
 else:
-    st.subheader("Bienvenido al Sistema de Gestión Industrial")
-    st.info("Seleccione un área y una opción en el menú de la izquierda para comenzar a trabajar.")
+    # Pantalla de bienvenida
+    st.markdown("""
+        <div style='text-align: center; margin-top: 100px;'>
+            <h1 style='font-size: 50px;'>BIENVENIDO</h1>
+            <p style='font-size: 20px; color: #d1d8e0 !important;'>Seleccione un área en el menú de la izquierda para comenzar.</p>
+        </div>
+    """, unsafe_allow_html=True)
