@@ -6,184 +6,105 @@ import os
 import requests
 import json
 
-# --- URL ACTUALIZADA ---
-URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbyv9E4-o66w0jkgDf7Ber0souEQ0jFTnFGIQrRVtiod7rm0YE7cdu23XHCx_0GLbYxZ/exec"
+# --- CONFIGURACIÓN DIRECTA ---
+URL_API = "https://script.google.com/macros/s/AKfycbyv9E4-o66w0jkgDf7Ber0souEQ0jFTnFGIQrRVtiod7rm0YE7cdu23XHCx_0GLbYxZ/exec"
 
 class RegistroCopelas:
-    def __init__(self, root_parent, nombre_usuario):
-        self.ventana = tk.Toplevel(root_parent)
-        self.ventana.title("SISTEMA INDUSTRIAL - GESTIÓN DE COPELAS")
-        self.nombre_usuario = nombre_usuario
+    def __init__(self, root, user):
+        self.win = tk.Toplevel(root)
+        self.win.title("SISTEMA DE PRODUCCIÓN")
+        self.user = user
+        self.db = os.path.join(os.path.dirname(__file__), "mi_base_de_datos.db")
         
-        self.directorio = os.path.dirname(os.path.abspath(__file__))
-        self.db_name = os.path.join(self.directorio, "mi_base_de_datos.db")
-        
-        self.ventana.state('zoomed') 
-        self.ventana.configure(bg="#1e272e")
+        self.win.state('zoomed')
+        self.win.configure(bg="#1e272e")
 
-        # --- CONFIGURACIÓN DE ESTILOS ---
-        self.estilo = ttk.Style()
-        self.estilo.theme_use('clam')
-        
-        # Estilo para evitar el fondo blanco en los Combobox
-        self.estilo.configure("TCombobox", fieldbackground="#2c3e50", background="#2c3e50", foreground="white")
-        self.estilo.map("TCombobox", fieldbackground=[('readonly', '#2c3e50')], foreground=[('readonly', 'white')])
-        
-        # Estilo de la Tabla (Listbox)
-        self.estilo.configure("Treeview", background="#2c3e50", foreground="white", fieldbackground="#2c3e50", rowheight=25)
-        self.estilo.heading("Treeview", background="#10ac84", foreground="white", font=("Arial", 10, "bold"))
-        self.estilo.map("Treeview", background=[('selected', '#10ac84')])
+        # Estilo Forzado
+        s = ttk.Style()
+        s.theme_use('clam')
+        s.configure("Treeview", background="#2c3e50", foreground="white", fieldbackground="#2c3e50")
+        s.configure("TCombobox", fieldbackground="#2c3e50", background="#2c3e50", foreground="white")
 
-        self.inicializar_db()
-        self.crear_interfaz()
-        self.verificar_permisos()
-        self.cargar_datos_tabla()
+        self.init_db()
+        self.build_ui()
+        self.load_data()
+        self.check_admin()
 
-    def inicializar_db(self):
-        with sqlite3.connect(self.db_name) as conn:
-            cur = conn.cursor()
-            cur.execute("""CREATE TABLE IF NOT EXISTS COPELA (
-                N_Codigo INTEGER PRIMARY KEY AUTOINCREMENT,
-                Codigo TEXT, Fecha_Registro TEXT, Operador TEXT, 
-                N_Parrilla TEXT, Cantidad INTEGER, Material TEXT, 
-                Prensa TEXT, Estado TEXT)""")
-            conn.commit()
+    def init_db(self):
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS COPELA (id INTEGER PRIMARY KEY, cod TEXT, fec TEXT, op TEXT, cant INT, mat TEXT, est TEXT)")
 
-    def verificar_permisos(self):
-        """ Verifica en la tabla USUARIO si el rango es 1 """
+    def check_admin(self):
         try:
-            with sqlite3.connect(self.db_name) as conn:
-                cur = conn.cursor()
-                cur.execute("SELECT rango FROM USUARIO WHERE usuario = ?", (self.nombre_usuario,))
-                res = cur.fetchone()
-                if res and (str(res[0]) == "1"):
-                    self.btn_modificar.config(state="normal")
-                    self.btn_eliminar.config(state="normal")
+            with sqlite3.connect(self.db) as conn:
+                r = conn.execute("SELECT rango FROM USUARIO WHERE usuario=?", (self.user,)).fetchone()
+                if r and str(r[0]) == "1":
+                    self.b_mod.config(state="normal"); self.b_del.config(state="normal")
         except: pass
 
-    def enviar_a_nube(self, payload):
-        try:
-            # Enviamos como JSON para Google Apps Script
-            response = requests.post(URL_API_GOOGLE, json=payload, timeout=10)
-            print(f"Respuesta Google: {response.text}")
-            return "OK" in response.text or response.status_code == 200
-        except Exception as e:
-            print(f"Error Nube: {e}")
-            return False
+    def save(self):
+        # Captura rápida de datos
+        c, f, m, q = self.cb_p.get(), self.e_f.get(), self.e_m.get().upper(), self.e_q.get()
+        if not m or not q: return
 
-    def registrar_datos(self):
-        if not self.ent_mat.get() or self.ent_uni.get() == "":
-            messagebox.showwarning("Atención", "Complete todos los campos")
-            return
+        # 1. LOCAL (Instantáneo)
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("INSERT INTO COPELA (cod, fec, op, cant, mat, est) VALUES (?,?,?,?,?,?)", (c, f, self.user, q, m, "PENDIENTE"))
         
+        # 2. NUBE (Sin restricciones de espera)
+        payload = {"codigo": c, "fecha": f, "operador": self.user, "cantidad": q, "material": m}
         try:
-            datos = {
-                "accion": "crear",
-                "codigo": self.cb_prod.get(),
-                "fecha": self.ent_fec_reg.get(),
-                "operador": self.nombre_usuario,
-                "n_parrilla": "P-01",
-                "cantidad": int(self.ent_uni.get()),
-                "material": self.ent_mat.get().upper(),
-                "prensa": "PRENSA-1"
-            }
+            requests.post(URL_API, data=json.dumps(payload), headers={"Content-Type":"application/json"}, timeout=5)
+            print("Enviado a la nube.")
+        except:
+            print("Error de red, guardado solo local.")
 
-            # 1. Guardar Localmente
-            with sqlite3.connect(self.db_name) as conn:
-                cur = conn.cursor()
-                cur.execute("""INSERT INTO COPELA (Codigo, Fecha_Registro, Operador, N_Parrilla, Cantidad, Material, Prensa, Estado) 
-                            VALUES (?,?,?,?,?,?,?,?)""",
-                            (datos["codigo"], datos["fecha"], datos["operador"], datos["n_parrilla"], 
-                             datos["cantidad"], datos["material"], datos["prensa"], "SINCRONIZADO"))
-                conn.commit()
-            
-            # 2. Intentar registrar en Google Sheets
-            if self.enviar_a_nube(datos):
-                print("Sincronización exitosa")
-            else:
-                print("Fallo sincronización nube")
+        self.load_data()
+        self.e_m.delete(0, tk.END); self.e_q.delete(0, tk.END)
 
-            self.cargar_datos_tabla()
-            self.ent_mat.delete(0, tk.END)
-            self.ent_uni.delete(0, tk.END)
-            messagebox.showinfo("Éxito", "Registro guardado.")
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Error: {e}")
-
-    def crear_interfaz(self):
-        self.ventana.columnconfigure(0, weight=1)
-        self.ventana.rowconfigure(1, weight=1)
-
-        # --- PARTE SUPERIOR: FORMULARIO ---
-        f_top = tk.Frame(self.ventana, bg="#1e272e", pady=15)
-        f_top.grid(row=0, column=0, sticky="ew", padx=20)
-
-        # Labels informativos arriba de cada campo
-        campos = [("CÓDIGO", 0), ("MATERIAL", 1), ("CANTIDAD", 2), ("FECHA", 3)]
-        for texto, col in campos:
-            tk.Label(f_top, text=texto, fg="cyan", bg="#1e272e", font=("Arial", 8, "bold")).grid(row=0, column=col)
-
-        self.cb_prod = ttk.Combobox(f_top, values=["Cod-7C", "Cod-8C", "Cod-9C"], state="readonly", width=12)
-        self.cb_prod.set("Cod-7C")
-        self.cb_prod.grid(row=1, column=0, padx=5)
-
-        self.ent_mat = tk.Entry(f_top, bg="#2c3e50", fg="white", insertbackground="white", font=("Arial", 11))
-        self.ent_mat.grid(row=1, column=1, padx=5)
-
-        self.ent_uni = tk.Entry(f_top, bg="#2c3e50", fg="white", insertbackground="white", font=("Arial", 11), width=10)
-        self.ent_uni.grid(row=1, column=2, padx=5)
-
-        self.ent_fec_reg = tk.Entry(f_top, bg="#2c3e50", fg="white", font=("Arial", 11), width=12)
-        self.ent_fec_reg.insert(0, datetime.now().strftime("%d/%m/%Y"))
-        self.ent_fec_reg.grid(row=1, column=3, padx=5)
-
-        tk.Button(f_top, text="GUARDAR", bg="#10ac84", fg="white", font=("Arial", 10, "bold"), width=15, command=self.registrar_datos).grid(row=1, column=4, padx=10)
-
-        # --- PARTE CENTRAL: TABLA (LISTBOX) ---
-        f_tabla = tk.Frame(self.ventana, bg="#1e272e")
-        f_tabla.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
+    def build_ui(self):
+        # Panel Superior (Registro)
+        f1 = tk.Frame(self.win, bg="#1e272e", pady=20)
+        f1.pack(fill="x")
         
-        f_tabla.columnconfigure(0, weight=1)
-        f_tabla.rowconfigure(0, weight=1)
-
-        columnas = ("ID", "COD", "FECHA", "OPERADOR", "PARR", "CANT", "MAT", "PRENSA", "ESTADO")
-        self.tabla = ttk.Treeview(f_tabla, columns=columnas, show="headings")
+        self.cb_p = ttk.Combobox(f1, values=["Cod-7C", "Cod-8C", "Cod-9C"], width=12); self.cb_p.set("Cod-7C")
+        self.cb_p.grid(row=0, column=0, padx=10)
         
-        sy = ttk.Scrollbar(f_tabla, orient="vertical", command=self.tabla.yview)
-        sx = ttk.Scrollbar(f_tabla, orient="horizontal", command=self.tabla.xview)
-        self.tabla.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
+        self.e_m = tk.Entry(f1, bg="#2c3e50", fg="white", width=20); self.e_m.insert(0, "MATERIAL"); self.e_m.grid(row=0, column=1, padx=10)
+        self.e_q = tk.Entry(f1, bg="#2c3e50", fg="white", width=10); self.e_q.insert(0, "CANT"); self.e_q.grid(row=0, column=2, padx=10)
+        
+        self.e_f = tk.Entry(f1, bg="#2c3e50", fg="white", width=12); self.e_f.insert(0, datetime.now().strftime("%d/%m/%Y")); self.e_f.grid(row=0, column=3, padx=10)
+        
+        tk.Button(f1, text="GUARDAR", bg="#10ac84", fg="white", font=("Arial",10,"bold"), command=self.save, width=12).grid(row=0, column=4, padx=10)
 
-        for col in columnas:
-            self.tabla.heading(col, text=col)
-            self.tabla.column(col, width=90, anchor="center")
+        # Panel Central (Tabla/Listbox)
+        f2 = tk.Frame(self.win, bg="#1e272e")
+        f2.pack(expand=True, fill="both", padx=20)
+        
+        cols = ("ID", "COD", "FECHA", "OPERADOR", "CANT", "MAT", "ESTADO")
+        self.tree = ttk.Treeview(f2, columns=cols, show="headings")
+        for c in cols: self.tree.heading(c, text=c); self.tree.column(c, width=100, anchor="center")
+        
+        sc = ttk.Scrollbar(f2, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sc.set)
+        self.tree.pack(side="left", expand=True, fill="both")
+        sc.pack(side="right", fill="y")
 
-        self.tabla.grid(row=0, column=0, sticky="nsew")
-        sy.grid(row=0, column=1, sticky="ns")
-        sx.grid(row=1, column=0, sticky="ew")
+        # Panel Inferior (Admin)
+        f3 = tk.Frame(self.win, bg="#1e272e", pady=20)
+        f3.pack()
+        self.b_mod = tk.Button(f3, text="MODIFICAR", bg="#f39c12", fg="white", width=15, state="disabled")
+        self.b_mod.grid(row=0, column=0, padx=10)
+        self.b_del = tk.Button(f3, text="ELIMINAR", bg="#e74c3c", fg="white", width=15, state="disabled")
+        self.b_del.grid(row=0, column=1, padx=10)
 
-        # --- PARTE INFERIOR: PANEL ADMIN ---
-        f_bot = tk.Frame(self.ventana, bg="#1e272e", pady=20)
-        f_bot.grid(row=2, column=0, sticky="ew")
-
-        self.btn_modificar = tk.Button(f_bot, text="🔧 MODIFICAR", bg="#f39c12", fg="white", width=20, state="disabled")
-        self.btn_modificar.grid(row=0, column=0, padx=20)
-
-        self.btn_eliminar = tk.Button(f_bot, text="🗑️ ELIMINAR", bg="#e74c3c", fg="white", width=20, state="disabled")
-        self.btn_eliminar.grid(row=0, column=1, padx=20)
-
-    def cargar_datos_tabla(self):
-        for i in self.tabla.get_children(): self.tabla.delete(i)
-        try:
-            with sqlite3.connect(self.db_name) as conn:
-                cur = conn.cursor()
-                cur.execute("SELECT * FROM COPELA ORDER BY N_Codigo DESC")
-                for r in cur.fetchall(): self.tabla.insert("", "end", values=r)
-        except: pass
+    def load_data(self):
+        for i in self.tree.get_children(): self.tree.delete(i)
+        with sqlite3.connect(self.db) as conn:
+            for r in conn.execute("SELECT * FROM COPELA ORDER BY id DESC LIMIT 50"):
+                self.tree.insert("", "end", values=r)
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    root.withdraw()
-    # Asegúrate de que el usuario "MANUEL" exista en la tabla USUARIO con rango 1
-    app = RegistroCopelas(root, "MANUEL") 
+    root = tk.Tk(); root.withdraw()
+    app = RegistroCopelas(root, "MANUEL") # Cambia por el usuario real
     root.mainloop()
