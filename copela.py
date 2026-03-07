@@ -1,72 +1,69 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox
 import sqlite3
 from datetime import datetime
 import os
-import pandas as pd
-import requests  # Importante: pip install requests
 import json
+import requests  # RECUERDA: pip install requests
 
-# --- CONFIGURACIÓN DE CONEXIÓN ---
-# Pega aquí la URL que obtuviste al "Implementar" tu Apps Script
-URL_API_GOOGLE = https://docs.google.com/spreadsheets/d/1dKqjZESRQ8pDmILv58u8ARm5Vowix185NudbaeUNfLI/edit?gid=0#gid=0
+# --- CONFIGURACIÓN DE TU API DE GOOGLE ---
+URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbw-ub_uSE-6NX9DcWKwHOLABXdF4633-PBgV17cyr84Z5oXBeXl79S0Zb6oeBP0_9rO/exec"
 
 class RegistroCopelas:
     def __init__(self, root_parent, nombre_operario):
         self.ventana = tk.Toplevel(root_parent)
-        self.ventana.title("SISTEMA DE CONTROL - REGISTRO DE COPELAS")
+        self.ventana.title("SISTEMA INDUSTRIAL - REGISTRO DE COPELAS")
         self.nombre_operario = nombre_operario
         
+        # Configuración de base de datos local
         self.directorio = os.path.dirname(os.path.abspath(__file__))
         self.db_name = os.path.join(self.directorio, "mi_base_de_datos.db")
         
-        self.id_seleccionado = tk.StringVar(value="")
         self.ventana.state('zoomed') 
         self.ventana.configure(bg="#2f3640")
 
         self.inicializar_db()
         self.crear_interfaz()
-        self.cargar_datos()
-
-    # --- NUEVA FUNCIÓN: ENVÍO A GOOGLE DRIVE ---
-    def enviar_a_google_sheets(self, datos_dict):
-        try:
-            # Enviamos el JSON a tu script de Google
-            response = requests.post(URL_API_GOOGLE, data=json.dumps(datos_dict))
-            if response.status_code == 200:
-                print("Sincronizado con Google Drive correctamente.")
-                return True
-            else:
-                print(f"Error en Drive: {response.status_code}")
-                return False
-        except Exception as e:
-            print(f"Error de red: {e}")
-            return False
+        self.cargar_datos_tabla()
 
     def inicializar_db(self):
+        """Crea la tabla local si no existe"""
+        with sqlite3.connect(self.db_name) as conn:
+            cur = conn.cursor()
+            cur.execute("""CREATE TABLE IF NOT EXISTS COPELA (
+                N_Codigo INTEGER PRIMARY KEY AUTOINCREMENT,
+                Codigo TEXT, Fecha_Registro TEXT, Operador TEXT, 
+                N_Parrilla TEXT, Cantidad INTEGER, Material TEXT, 
+                Prensa TEXT, Estado TEXT)""")
+            conn.commit()
+
+    def enviar_a_google_drive(self, datos):
+        """Envía el diccionario de datos al Apps Script de Google"""
         try:
-            with sqlite3.connect(self.db_name) as conn:
-                cur = conn.cursor()
-                cur.execute("""CREATE TABLE IF NOT EXISTS COPELA (
-                    N_Codigo INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Codigo TEXT, Fecha_Registro TEXT, Operador TEXT, 
-                    N_Parrilla TEXT, Cantidad INTEGER, Material TEXT, 
-                    Prensa TEXT, Estado TEXT)""")
-                conn.commit()
+            response = requests.post(
+                URL_API_GOOGLE, 
+                data=json.dumps(datos),
+                headers={'Content-Type': 'application/json'},
+                timeout=10 # Espera máximo 10 segundos
+            )
+            return response.status_code == 200
         except Exception as e:
-            print(f"Error al inicializar DB: {e}")
+            print(f"Error de conexión con Google: {e}")
+            return False
 
-    def obtener_fecha_proceso(self):
-        fecha_manual = self.ent_fec_reg.get().strip()
-        if not fecha_manual:
-            return datetime.now().strftime("%d/%m/%Y")
-        return fecha_manual
+    def registrar_datos(self):
+        """Lógica principal de guardado local y nube"""
+        # Validación básica
+        if not self.ent_mat.get() or not self.ent_uni.get():
+            messagebox.showwarning("Atención", "Por favor llene todos los campos.")
+            return
 
-    def registrar(self):
-        fecha_proceso = self.obtener_fecha_proceso()
-        
-        # 1. Preparamos el diccionario para Google Sheets
-        datos_api = {
+        fecha_proceso = self.ent_fec_reg.get().strip()
+        if not fecha_proceso:
+            fecha_proceso = datetime.now().strftime("%d/%m/%Y")
+
+        # Preparar paquete de datos
+        datos_registro = {
             "codigo": self.cb_prod.get(),
             "fecha": fecha_proceso,
             "operador": self.nombre_operario,
@@ -75,91 +72,107 @@ class RegistroCopelas:
             "material": self.ent_mat.get().upper(),
             "prensa": self.cb_prensa.get()
         }
-        
+
         try:
-            # 2. Guardar en Base de Datos Local (SQLite)
+            # 1. GUARDAR LOCAL (SQLite)
             with sqlite3.connect(self.db_name) as conn:
                 cur = conn.cursor()
                 cur.execute("""INSERT INTO COPELA (Codigo, Fecha_Registro, Operador, N_Parrilla, Cantidad, Material, Prensa, Estado) 
-                    VALUES (?,?,?,?,?,?,?,?)""", (datos_api["codigo"], datos_api["fecha"], datos_api["operador"], 
-                    datos_api["n_parrilla"], datos_api["cantidad"], datos_api["material"], datos_api["prensa"], "PENDIENTE"))
+                    VALUES (?,?,?,?,?,?,?,?)""", (
+                        datos_registro["codigo"], datos_registro["fecha"], datos_registro["operador"], 
+                        datos_registro["n_parrilla"], datos_registro["cantidad"], 
+                        datos_registro["material"], datos_registro["prensa"], "PENDIENTE"
+                    ))
                 conn.commit()
 
-            # 3. ENVIAR A GOOGLE DRIVE (Sincronización)
-            exito_nube = self.enviar_a_google_sheets(datos_api)
+            # 2. ENVIAR A GOOGLE DRIVE
+            exito_nube = self.enviar_a_google_drive(datos_registro)
 
             if exito_nube:
-                messagebox.showinfo("Éxito", f"Registrado localmente y en Google Drive.\nFecha: {fecha_proceso}")
+                messagebox.showinfo("Éxito", "✅ Registro guardado en PC y sincronizado con Google Drive.")
             else:
-                messagebox.showwarning("Aviso", "Guardado localmente, pero falló la subida a Google Drive (Revisa internet).")
+                messagebox.showwarning("Sincronización", "⚠️ Guardado en PC, pero NO se pudo subir a la nube. Revise su internet.")
 
-            self.cargar_datos()
-            self.limpiar_campos()
-            
+            self.limpiar_formulario()
+            self.cargar_datos_tabla()
+
         except Exception as e:
-            messagebox.showerror("Error", str(e))
+            messagebox.showerror("Error", f"Ocurrió un error: {e}")
 
     def crear_interfaz(self):
-        # ... (Tu código de interfaz se mantiene igual) ...
-        # Asegúrate de que el botón REGISTRAR llame a self.registrar
-        MEDIDAS = {"width": 20, "font": ("Arial", 12)}
+        estilo = {"width": 25, "font": ("Arial", 12)}
         
+        # Encabezado
         header = tk.Frame(self.ventana, bg="#2f3640")
-        header.pack(fill="x", pady=10)
-        tk.Label(header, text="REGISTRO DE COPELAS", fg="white", bg="#2f3640", font=("Arial", 25, "bold")).pack()
-        
-        f_in = tk.LabelFrame(self.ventana, text=" Datos de Producción ", fg="#00d2d3", bg="#2f3640", font=("Arial", 12, "bold"), padx=15, pady=15)
-        f_in.pack(pady=10, padx=20, fill="x")
-        
-        # FILA 1
-        tk.Label(f_in, text="C/Producto:", fg="white", bg="#2f3640").grid(row=0, column=0)
-        self.cb_prod = ttk.Combobox(f_in, values=["Cod-7C", "Cod-8C", "Cod-9C", "Cod-11C", "Cod-9R"], state="readonly", **MEDIDAS)
-        self.cb_prod.grid(row=1, column=0, padx=5, pady=10)
+        header.pack(fill="x", pady=15)
+        tk.Label(header, text="📝 REGISTRO DE PRODUCCIÓN: COPELAS", fg="#00d2d3", bg="#2f3640", font=("Arial", 22, "bold")).pack()
+        tk.Label(header, text=f"Operario actual: {self.nombre_operario}", fg="white", bg="#2f3640", font=("Arial", 10)).pack()
 
-        tk.Label(f_in, text="Material:", fg="white", bg="#2f3640").grid(row=0, column=1)
-        self.ent_mat = tk.Entry(f_in, **MEDIDAS)
-        self.ent_mat.grid(row=1, column=1, padx=5, pady=10)
+        # Contenedor de Formulario
+        f_main = tk.LabelFrame(self.ventana, text=" Datos de Entrada ", fg="white", bg="#2f3640", font=("Arial", 11, "bold"), padx=20, pady=20)
+        f_main.pack(pady=10, padx=30, fill="x")
 
-        tk.Label(f_in, text="N° Parrilla:", fg="white", bg="#2f3640").grid(row=0, column=2)
-        self.cb_parr = ttk.Combobox(f_in, values=[f"P-{i:02d}" for i in range(1, 21)], state="readonly", **MEDIDAS)
-        self.cb_parr.grid(row=1, column=2, padx=5, pady=10)
+        # Fila 1
+        tk.Label(f_main, text="Código Producto:", fg="white", bg="#2f3640").grid(row=0, column=0, sticky="w")
+        self.cb_prod = ttk.Combobox(f_main, values=["Cod-7C", "Cod-8C", "Cod-9C", "Cod-11C", "Cod-9R"], state="readonly", **estilo)
+        self.cb_prod.current(0)
+        self.cb_prod.grid(row=1, column=0, padx=10, pady=5)
 
-        # FILA 2
-        tk.Label(f_in, text="Cantidad:", fg="white", bg="#2f3640").grid(row=2, column=0)
-        self.ent_uni = tk.Entry(f_in, **MEDIDAS)
-        self.ent_uni.grid(row=3, column=0, padx=5, pady=10)
+        tk.Label(f_main, text="Material / Mezcla:", fg="white", bg="#2f3640").grid(row=0, column=1, sticky="w")
+        self.ent_mat = tk.Entry(f_main, **estilo)
+        self.ent_mat.grid(row=1, column=1, padx=10, pady=5)
 
-        tk.Label(f_in, text="Prensa:", fg="white", bg="#2f3640").grid(row=2, column=1)
-        self.cb_prensa = ttk.Combobox(f_in, values=["Prensa 01", "Prensa 02", "Prensa 03"], state="readonly", **MEDIDAS)
-        self.cb_prensa.grid(row=3, column=1, padx=5, pady=10)
+        tk.Label(f_main, text="N° Parrilla:", fg="white", bg="#2f3640").grid(row=0, column=2, sticky="w")
+        self.cb_parr = ttk.Combobox(f_main, values=[f"P-{i:02d}" for i in range(1, 21)], state="readonly", **estilo)
+        self.cb_parr.grid(row=1, column=2, padx=10, pady=5)
 
-        tk.Label(f_in, text="Fecha (DD/MM/YYYY):", fg="white", bg="#2f3640").grid(row=2, column=2)
-        self.ent_fec_reg = tk.Entry(f_in, **MEDIDAS)
-        self.ent_fec_reg.grid(row=3, column=2, padx=5, pady=10)
+        # Fila 2
+        tk.Label(f_main, text="Cantidad (Unidades):", fg="white", bg="#2f3640").grid(row=2, column=0, sticky="w", pady=(10,0))
+        self.ent_uni = tk.Entry(f_main, **estilo)
+        self.ent_uni.grid(row=3, column=0, padx=10, pady=5)
 
-        # TABLA
-        self.tabla = ttk.Treeview(self.ventana, columns=("ID", "Cod", "Fec", "Op", "Par", "Cant", "Mat", "Pre"), show="headings")
-        for c in self.tabla["columns"]: self.tabla.heading(c, text=c); self.tabla.column(c, width=100)
-        self.tabla.pack(expand=True, fill="both", padx=20)
+        tk.Label(f_main, text="Prensa Utilizada:", fg="white", bg="#2f3640").grid(row=2, column=1, sticky="w", pady=(10,0))
+        self.cb_prensa = ttk.Combobox(f_main, values=["Prensa 01", "Prensa 02", "Prensa 03", "Prensa 04", "Prensa 05"], state="readonly", **estilo)
+        self.cb_prensa.current(0)
+        self.cb_prensa.grid(row=3, column=1, padx=10, pady=5)
 
-        # BOTÓN REGISTRAR
-        self.btn_reg = tk.Button(self.ventana, text="REGISTRAR Y SINCRONIZAR", bg="#008080", fg="white", font=("Arial", 12, "bold"), command=self.registrar)
-        self.btn_reg.pack(pady=20)
+        tk.Label(f_main, text="Fecha (DD/MM/YYYY):", fg="white", bg="#2f3640").grid(row=2, column=2, sticky="w", pady=(10,0))
+        self.ent_fec_reg = tk.Entry(f_main, **estilo)
+        self.ent_fec_reg.insert(0, datetime.now().strftime("%d/%m/%Y"))
+        self.ent_fec_reg.grid(row=3, column=2, padx=10, pady=5)
 
-    def cargar_datos(self, filtro=""):
+        # Botón de Acción
+        self.btn_guardar = tk.Button(self.ventana, text="💾 REGISTRAR Y SUBIR A DRIVE", bg="#10ac84", fg="white", font=("Arial", 14, "bold"), 
+                                     padx=20, pady=10, command=self.registrar_datos, cursor="hand2")
+        self.btn_guardar.pack(pady=20)
+
+        # Tabla de Visualización
+        self.tabla = ttk.Treeview(self.ventana, columns=("ID", "Cod", "Fecha", "Op", "Parrilla", "Cant", "Mat", "Prensa"), show="headings")
+        cabeceras = [("ID", 50), ("Cod", 100), ("Fecha", 120), ("Op", 150), ("Parrilla", 100), ("Cant", 80), ("Mat", 120), ("Prensa", 120)]
+        for col, ancho in cabeceras:
+            self.tabla.heading(col, text=col)
+            self.tabla.column(col, width=ancho, anchor="center")
+        self.tabla.pack(expand=True, fill="both", padx=30, pady=10)
+
+    def cargar_datos_tabla(self):
+        """Refresca la tabla con los datos de SQLite"""
         for i in self.tabla.get_children(): self.tabla.delete(i)
-        with sqlite3.connect(self.db_name) as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM COPELA ORDER BY N_Codigo DESC")
-            for r in cur.fetchall(): self.tabla.insert("", "end", values=r)
+        try:
+            with sqlite3.connect(self.db_name) as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT * FROM COPELA ORDER BY N_Codigo DESC LIMIT 15")
+                for fila in cur.fetchall():
+                    self.tabla.insert("", "end", values=fila)
+        except: pass
 
-    def limpiar_campos(self):
-        self.cb_prod.set(''); self.ent_mat.delete(0, tk.END); self.cb_parr.set('')
-        self.ent_uni.delete(0, tk.END); self.cb_prensa.set(''); self.ent_fec_reg.delete(0, tk.END)
+    def limpiar_formulario(self):
+        self.ent_mat.delete(0, tk.END)
+        self.ent_uni.delete(0, tk.END)
+        self.cb_prod.current(0)
+        self.cb_parr.set('')
 
-# --- INICIO ---
 if __name__ == "__main__":
     root = tk.Tk()
-    root.withdraw()
-    app = RegistroCopelas(root, "OPERARIO_PRUEBA")
+    root.withdraw() # Oculta la ventana principal de root
+    app = RegistroCopelas(root, "JOA EMANUEL") # Nombre del operario de prueba
     root.mainloop()
