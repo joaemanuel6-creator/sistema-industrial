@@ -22,20 +22,22 @@ if "autenticado" not in st.session_state:
 # 2. FUNCIÓN DE LECTURA DE GOOGLE SHEETS
 def leer_datos(nombre_pestaña):
     try:
-        # La conexión busca automáticamente el link en st.secrets
+        # 1. Creamos la conexión
         conn = st.connection("gsheets", type=GSheetsConnection)
         
-        # ttl=0 obliga a refrescar los datos de Google Drive siempre
-        df = conn.read(worksheet=nombre_pestaña, ttl=0)
+        # 2. Obtenemos la URL directamente de los secrets para que no diga "not specified"
+        url_documento = st.secrets["connections"]["gsheets"]["spreadsheet"]
+        
+        # 3. Leemos la pestaña usando la URL y el nombre de la hoja
+        df = conn.read(spreadsheet=url_documento, worksheet=nombre_pestaña, ttl=0)
         
         if df is not None:
-            # Normalizamos nombres de columnas para evitar errores de escritura
             df.columns = [str(c).strip().upper() for c in df.columns]
             df = df.dropna(how="all")
             return df
         return pd.DataFrame()
     except Exception as e:
-        st.error(f"❌ Error al conectar con la pestaña '{nombre_pestaña}': {e}")
+        st.error(f"❌ Error crítico: {e}")
         return pd.DataFrame()
 
 # 3. INTERFAZ DE LOGIN
@@ -99,3 +101,4 @@ with tab2:
         st.dataframe(df_cop.tail(10), use_container_width=True, hide_index=True)
     else:
         st.info("No hay registros de salidas en la pestaña 'COPELA'.")
+
