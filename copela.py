@@ -12,7 +12,7 @@ URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbyMjLXjtHgApvfRYaybrby
 class RegistroCopelas:
     def __init__(self, root_parent, nombre_usuario):
         self.ventana = tk.Toplevel(root_parent)
-        self.ventana.title("SISTEMA INDUSTRIAL - COPELAS")
+        self.ventana.title("SISTEMA INDUSTRIAL - REGISTRO DE COPELAS")
         self.nombre_usuario = nombre_usuario
         
         self.directorio = os.path.dirname(os.path.abspath(__file__))
@@ -21,11 +21,11 @@ class RegistroCopelas:
         self.ventana.state('zoomed') 
         self.ventana.configure(bg="#1e272e")
 
-        # Configuración de ESTILOS para evitar que se ponga blanco
+        # --- ESTILOS ---
         self.estilo = ttk.Style()
-        self.estilo.theme_use('clam') # 'clam' permite cambiar colores de Combobox mejor
-        self.estilo.configure("TCombobox", fieldbackground="#2c3e50", background="#2c3e50", foreground="white")
+        self.estilo.theme_use('clam')
         self.estilo.configure("Treeview", background="#2c3e50", foreground="white", fieldbackground="#2c3e50", rowheight=25)
+        self.estilo.heading("Treeview", background="#34495e", foreground="white", font=("Arial", 10, "bold"))
         self.estilo.map("Treeview", background=[('selected', '#10ac84')])
 
         self.inicializar_db()
@@ -53,116 +53,116 @@ class RegistroCopelas:
                 if res and (str(res[0]) == "1"):
                     self.btn_modificar.config(state="normal")
                     self.btn_eliminar.config(state="normal")
-        except: pass
+        except:
+            pass
 
     def enviar_a_nube(self, payload):
-        """ Envío forzado a la nube """
         try:
-            # Importante: enviamos 'json=payload' para que Requests maneje el encabezado automáticamente
+            # Forzamos el envío como JSON para Google Apps Script
             response = requests.post(URL_API_GOOGLE, json=payload, timeout=10)
-            print(f"Respuesta Nube: {response.text}")
-            return True
+            print(f"Respuesta Google: {response.status_code}")
+            return response.status_code == 200
         except Exception as e:
             print(f"Error Nube: {e}")
             return False
 
     def registrar_datos(self):
-        if not self.ent_mat.get() or self.ent_mat.get() == "MATERIAL":
-            messagebox.showwarning("Atención", "Ingrese el material")
+        if not self.ent_mat.get() or self.ent_uni.get() == "":
+            messagebox.showwarning("Atención", "Complete todos los campos")
             return
         
         try:
-            cant = int(self.ent_uni.get())
             datos = {
                 "accion": "crear",
                 "codigo": self.cb_prod.get(),
                 "fecha": self.ent_fec_reg.get(),
                 "operador": self.nombre_usuario,
                 "n_parrilla": "P-01",
-                "cantidad": cant,
+                "cantidad": int(self.ent_uni.get()),
                 "material": self.ent_mat.get().upper(),
                 "prensa": "PRENSA-1"
             }
 
-            # Guardar Local
+            # 1. Guardar Local
             with sqlite3.connect(self.db_name) as conn:
                 cur = conn.cursor()
                 cur.execute("""INSERT INTO COPELA (Codigo, Fecha_Registro, Operador, N_Parrilla, Cantidad, Material, Prensa, Estado) 
                             VALUES (?,?,?,?,?,?,?,?)""",
                             (datos["codigo"], datos["fecha"], datos["operador"], datos["n_parrilla"], 
-                             datos["cantidad"], datos["material"], datos["prensa"], "ENVIANDO..."))
+                             datos["cantidad"], datos["material"], datos["prensa"], "SINCRONIZADO"))
                 conn.commit()
             
-            # Guardar Nube
-            if self.enviar_a_nube(datos):
-                messagebox.showinfo("Éxito", "Registrado en PC y Nube")
-            else:
-                messagebox.showwarning("Aviso", "Guardado localmente, pero falló la Nube")
-
+            # 2. Guardar Nube
+            self.enviar_a_nube(datos)
+            
+            # 3. Actualizar interfaz
             self.cargar_datos_tabla()
             self.ent_mat.delete(0, tk.END)
             self.ent_uni.delete(0, tk.END)
+            messagebox.showinfo("Éxito", "Registro completado")
             
-        except ValueError:
-            messagebox.showerror("Error", "Cantidad debe ser número")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo registrar: {e}")
 
     def crear_interfaz(self):
-        # TÍTULO
-        tk.Label(self.ventana, text="PANEL DE COPELAS", font=("Arial", 18, "bold"), fg="cyan", bg="#1e272e").pack(pady=10)
+        # Configuramos la cuadrícula de la ventana principal
+        self.ventana.columnconfigure(0, weight=1)
+        self.ventana.rowconfigure(1, weight=1) # La tabla (fila 1) se expandirá
 
-        # PANEL ENTRADA
-        f_in = tk.Frame(self.ventana, bg="#1e272e")
-        f_in.pack(pady=10, fill="x", padx=20)
+        # --- SECCIÓN 1: ENTRADA (ARRIBA) ---
+        f_superior = tk.Frame(self.ventana, bg="#1e272e", pady=20)
+        f_superior.grid(row=0, column=0, sticky="ew")
 
-        self.cb_prod = ttk.Combobox(f_in, values=["Cod-7C", "Cod-8C", "Cod-9C"], state="readonly", width=15)
+        tk.Label(f_superior, text="CÓDIGO:", fg="white", bg="#1e272e").grid(row=0, column=0, padx=5)
+        self.cb_prod = ttk.Combobox(f_superior, values=["Cod-7C", "Cod-8C", "Cod-9C"], state="readonly", width=10)
         self.cb_prod.set("Cod-7C")
-        self.cb_prod.grid(row=0, column=0, padx=5)
+        self.cb_prod.grid(row=0, column=1, padx=5)
 
-        self.ent_mat = tk.Entry(f_in, bg="#2c3e50", fg="white", insertbackground="white", width=20)
-        self.ent_mat.insert(0, "MATERIAL")
-        self.ent_mat.grid(row=0, column=1, padx=5)
+        tk.Label(f_superior, text="MATERIAL:", fg="white", bg="#1e272e").grid(row=0, column=2, padx=5)
+        self.ent_mat = tk.Entry(f_superior, bg="#2c3e50", fg="white", width=15)
+        self.ent_mat.grid(row=0, column=3, padx=5)
 
-        self.ent_uni = tk.Entry(f_in, bg="#2c3e50", fg="white", insertbackground="white", width=10)
-        self.ent_uni.insert(0, "0")
-        self.ent_uni.grid(row=0, column=2, padx=5)
+        tk.Label(f_superior, text="CANT:", fg="white", bg="#1e272e").grid(row=0, column=4, padx=5)
+        self.ent_uni = tk.Entry(f_superior, bg="#2c3e50", fg="white", width=8)
+        self.ent_uni.grid(row=0, column=5, padx=5)
 
-        self.ent_fec_reg = tk.Entry(f_in, bg="#2c3e50", fg="white", width=15)
+        tk.Label(f_superior, text="FECHA:", fg="white", bg="#1e272e").grid(row=0, column=6, padx=5)
+        self.ent_fec_reg = tk.Entry(f_superior, bg="#2c3e50", fg="white", width=12)
         self.ent_fec_reg.insert(0, datetime.now().strftime("%d/%m/%Y"))
-        self.ent_fec_reg.grid(row=0, column=3, padx=5)
+        self.ent_fec_reg.grid(row=0, column=7, padx=5)
 
-        tk.Button(f_in, text="GUARDAR", bg="#10ac84", fg="white", font=("Arial", 10, "bold"), command=self.registrar_datos).grid(row=0, column=4, padx=10)
+        tk.Button(f_superior, text="GUARDAR", bg="#10ac84", fg="white", width=12, command=self.registrar_datos).grid(row=0, column=8, padx=15)
 
-        # PANEL TABLA (Tu "Listbox" mejorado)
+        # --- SECCIÓN 2: TABLA (CENTRO) ---
         f_tabla = tk.Frame(self.ventana, bg="#1e272e")
-        f_tabla.pack(expand=True, fill="both", padx=20, pady=10)
-
-        columnas = ("ID", "COD", "FECHA", "OPERADOR", "PARR", "CANT", "MAT", "PREN", "ESTADO")
-        self.tabla = ttk.Treeview(f_tabla, columns=columnas, show="headings", height=15)
+        f_tabla.grid(row=1, column=0, sticky="nsew", padx=20)
         
-        # Scrollbars para que se vea siempre
-        sy = ttk.Scrollbar(f_tabla, orient="vertical", command=self.tabla.yview)
-        sx = ttk.Scrollbar(f_tabla, orient="horizontal", command=self.tabla.xview)
-        self.tabla.configure(yscrollcommand=sy.set, xscrollcommand=sx.set)
+        f_tabla.columnconfigure(0, weight=1)
+        f_tabla.rowconfigure(0, weight=1)
+
+        columnas = ("ID", "COD", "FECHA", "OPERADOR", "PARR", "CANT", "MAT", "PRENSA", "ESTADO")
+        self.tabla = ttk.Treeview(f_tabla, columns=columnas, show="headings")
+        
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(f_tabla, orient="vertical", command=self.tabla.yview)
+        self.tabla.configure(yscrollcommand=scrollbar.set)
 
         for col in columnas:
             self.tabla.heading(col, text=col)
-            self.tabla.column(col, width=80, anchor="center")
+            self.tabla.column(col, width=100, anchor="center")
 
         self.tabla.grid(row=0, column=0, sticky="nsew")
-        sy.grid(row=0, column=1, sticky="ns")
-        sx.grid(row=1, column=0, sticky="ew")
-        f_tabla.grid_columnconfigure(0, weight=1)
-        f_tabla.grid_rowconfigure(0, weight=1)
+        scrollbar.grid(row=0, column=1, sticky="ns")
 
-        # PANEL BOTONES ABAJO
-        f_btn = tk.Frame(self.ventana, bg="#1e272e")
-        f_btn.pack(pady=10)
+        # --- SECCIÓN 3: BOTONES ADMIN (ABAJO) ---
+        f_inferior = tk.Frame(self.ventana, bg="#1e272e", pady=20)
+        f_inferior.grid(row=2, column=0, sticky="ew")
 
-        self.btn_modificar = tk.Button(f_btn, text="MODIFICAR", bg="#f39c12", fg="white", width=15, state="disabled")
-        self.btn_modificar.grid(row=0, column=0, padx=10)
+        self.btn_modificar = tk.Button(f_inferior, text="🔧 MODIFICAR", bg="#f39c12", fg="white", width=20, state="disabled")
+        self.btn_modificar.grid(row=0, column=0, padx=20)
 
-        self.btn_eliminar = tk.Button(f_btn, text="ELIMINAR", bg="#e74c3c", fg="white", width=15, state="disabled")
-        self.btn_eliminar.grid(row=0, column=1, padx=10)
+        self.btn_eliminar = tk.Button(f_inferior, text="🗑️ ELIMINAR", bg="#e74c3c", fg="white", width=20, state="disabled")
+        self.btn_eliminar.grid(row=0, column=1, padx=20)
 
     def cargar_datos_tabla(self):
         for i in self.tabla.get_children(): self.tabla.delete(i)
@@ -172,11 +172,12 @@ class RegistroCopelas:
                 cur.execute("SELECT * FROM COPELA ORDER BY N_Codigo DESC")
                 for fila in cur.fetchall():
                     self.tabla.insert("", "end", values=fila)
-        except: pass
+        except:
+            pass
 
 if __name__ == "__main__":
     root = tk.Tk()
     root.withdraw()
-    # Recuerda que el usuario "MANUEL" debe estar en la tabla USUARIO con rango 1
+    # Cambia "MANUEL" por el usuario del login
     app = RegistroCopelas(root, "MANUEL") 
     root.mainloop()
