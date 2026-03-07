@@ -12,7 +12,7 @@ if "autenticado" not in st.session_state:
 
 # 3. FUNCIONES DE BASE DE DATOS MEJORADAS
 def conectar_drive():
-    # Conexión directa a Google Sheets usando los secrets
+    # Esta línea busca automáticamente en la sección [connections.gsheets] de tus secrets
     return st.connection("gsheets", type=GSheetsConnection)
 
 def leer_tabla(nombre_pestaña):
@@ -114,3 +114,4 @@ elif opcion == "📂 Registro de Copelas":
         cant = st.number_input("Cantidad", min_value=1)
         if st.form_submit_button("Guardar Salida"):
             st.success(f"Registrado: {cant} de {mat}")
+
