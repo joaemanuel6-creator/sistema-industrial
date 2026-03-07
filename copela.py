@@ -1,135 +1,165 @@
-import streamlit as st
-import pandas as pd
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import sqlite3
 from datetime import datetime
-from streamlit_gsheets import GSheetsConnection
+import os
+import pandas as pd
+import requests  # Importante: pip install requests
+import json
 
-# 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(page_title="SISTEMA INDUSTRIAL v9.0", layout="wide")
+# --- CONFIGURACIÓN DE CONEXIÓN ---
+# Pega aquí la URL que obtuviste al "Implementar" tu Apps Script
+URL_API_GOOGLE = https://docs.google.com/spreadsheets/d/1dKqjZESRQ8pDmILv58u8ARm5Vowix185NudbaeUNfLI/edit?gid=0#gid=0
 
-# ID de tu documento
-SHEET_ID = "1dKqjZESRQ8pDmILv58u8ARm5Vowix185NudbaeUNfLI"
-
-# 2. DISEÑO CSS (Manteniendo tus colores)
-st.markdown("""
-    <style>
-    .stApp { background: #0d1117; }
-    [data-testid="stSidebar"] { background-color: #161b22 !important; border-right: 3px solid #00d2ff; }
-    .titulo-sidebar { color: #00d2ff; text-shadow: 0px 0px 15px #00d2ff; text-align: center; font-weight: 900; font-size: 26px; }
-    .usuario-sidebar { color: #ffda79 !important; text-align: center; font-weight: bold; font-size: 20px; }
-    .stButton > button { color: #00d2ff !important; background: none !important; border: none !important; width: 100%; text-align: left; font-size: 17px; }
-    .stButton > button:focus, .stButton > button:active, .stButton > button:hover {
-        color: #ff4d4d !important; text-shadow: 0px 0px 15px #ff4d4d !important; font-weight: bold !important;
-    }
-    .titulo-central { color: #00d2ff !important; font-size: 40px; font-weight: bold; }
-    h1, h2, h3, p, span, label { color: #e6edf3 !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# 3. CONEXIÓN A GOOGLE SHEETS
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-def leer_hoja_directo(nombre_pestaña):
-    try:
-        url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={nombre_pestaña}"
-        df = pd.read_csv(url)
-        df.columns = [str(c).strip().upper() for c in df.columns]
-        return df
-    except:
-        return pd.DataFrame()
-
-# --- MODULO DE COPELAS CON GUARDADO REAL ---
-def formulario_copelas(usuario):
-    st.markdown('<p class="titulo-central">📝 REGISTRO DE COPELAS</p>', unsafe_allow_html=True)
-    
-    # Usamos un formulario para agrupar los datos
-    with st.form("form_registro", clear_on_submit=True):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            codigo = st.selectbox("C/Producto:", ["Cod-7C", "Cod-8C", "Cod-9C", "Cod-11C", "Cod-9R"])
-            cantidad = st.number_input("Cantidad:", min_value=1, step=1)
-        with col2:
-            material = st.text_input("Material:").upper()
-            prensa = st.selectbox("Prensa:", ["Prensa 01", "Prensa 02", "Prensa 03", "Prensa 04", "Prensa 05"])
-        with col3:
-            parrilla = st.selectbox("N° Parrilla:", [f"P-{i:02d}" for i in range(1, 21)])
-            fecha = st.date_input("Fecha:", datetime.now())
+class RegistroCopelas:
+    def __init__(self, root_parent, nombre_operario):
+        self.ventana = tk.Toplevel(root_parent)
+        self.ventana.title("SISTEMA DE CONTROL - REGISTRO DE COPELAS")
+        self.nombre_operario = nombre_operario
         
-        enviar = st.form_submit_button("💾 GUARDAR EN GOOGLE DRIVE")
+        self.directorio = os.path.dirname(os.path.abspath(__file__))
+        self.db_name = os.path.join(self.directorio, "mi_base_de_datos.db")
+        
+        self.id_seleccionado = tk.StringVar(value="")
+        self.ventana.state('zoomed') 
+        self.ventana.configure(bg="#2f3640")
 
-    if enviar:
-        if not material:
-            st.error("⚠️ El campo Material es obligatorio.")
-        else:
-            try:
-                # 1. Intentar conectar y leer
-                conn = st.connection("gsheets", type=GSheetsConnection)
-                df_existente = conn.read(worksheet="COPELAS")
-                
-                # 2. Crear nueva fila
-                nueva_data = pd.DataFrame([{
-                    "CODIGO": codigo,
-                    "FECHA": fecha.strftime("%d/%m/%Y"),
-                    "OPERADOR": usuario,
-                    "N_PARRILLA": parrilla,
-                    "CANTIDAD": cantidad,
-                    "MATERIAL": material,
-                    "PRENSA": prensa,
-                    "ESTADO": "PENDIENTE"
-                }])
-                
-                # 3. Combinar y Actualizar
-                df_actualizado = pd.concat([df_existente, nueva_data], ignore_index=True)
-                conn.update(worksheet="COPELAS", data=df_actualizado)
-                
-                st.success("✅ ¡Guardado exitosamente en la nube!")
-                st.balloons()
-            except Exception as e:
-                st.error(f"❌ Error de conexión: {e}")
-                st.info("Asegúrate de que la pestaña se llame exactamente 'COPELAS' en mayúsculas.")
-# 4. LÓGICA DE SESIÓN Y LOGIN (Simplificada para el ejemplo)
-if "autenticado" not in st.session_state:
-    st.session_state.update({"autenticado": False, "usuario": "", "permisos": [], "sub_modulo": None})
+        self.inicializar_db()
+        self.crear_interfaz()
+        self.cargar_datos()
 
-if not st.session_state.autenticado:
-    st.markdown('<p class="titulo-central" style="text-align:center;">SISTEMA INDUSTRIAL</p>', unsafe_allow_html=True)
-    with st.container():
-        u_id = st.text_input("🆔 ID USUARIO")
-        u_pass = st.text_input("🔑 CONTRASEÑA", type="password")
-        if st.button("INGRESAR"):
-            df_u = leer_hoja_directo("USUARIO")
-            valido = df_u[(df_u['ID'].astype(str) == u_id) & (df_u['CONTRASEÑA'].astype(str) == u_pass)]
-            if not valido.empty:
-                st.session_state.update({"autenticado": True, "usuario": valido.iloc[0]['NOMBRES']})
-                fila = valido.iloc[0]
-                st.session_state.permisos = [str(col).strip().upper() for col in fila.index if str(fila[col]).strip() == '1']
-                st.rerun()
-    st.stop()
+    # --- NUEVA FUNCIÓN: ENVÍO A GOOGLE DRIVE ---
+    def enviar_a_google_sheets(self, datos_dict):
+        try:
+            # Enviamos el JSON a tu script de Google
+            response = requests.post(URL_API_GOOGLE, data=json.dumps(datos_dict))
+            if response.status_code == 200:
+                print("Sincronizado con Google Drive correctamente.")
+                return True
+            else:
+                print(f"Error en Drive: {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"Error de red: {e}")
+            return False
 
-# 5. SIDEBAR Y PANEL CENTRAL
-with st.sidebar:
-    st.markdown(f'<p class="titulo-sidebar">SISTEMA PRINCIPAL</p>', unsafe_allow_html=True)
-    st.markdown(f'<p class="usuario-sidebar">👤 {st.session_state.usuario}</p>', unsafe_allow_html=True)
-    
-    if st.button("🚪 CERRAR SESIÓN"):
-        st.session_state.clear()
-        st.rerun()
-    
-    st.divider()
-    
-    # Menú dinámico basado en permisos
-    modulos = ["COPELAS", "CRISOLES", "MANTENIMIENTO", "OBSERVACION", "ALMACEN"]
-    for mod in modulos:
-        if mod in st.session_state.permisos:
-            if st.button(f"📂 {mod}", key=f"btn_{mod}"):
-                st.session_state.sub_modulo = mod
+    def inicializar_db(self):
+        try:
+            with sqlite3.connect(self.db_name) as conn:
+                cur = conn.cursor()
+                cur.execute("""CREATE TABLE IF NOT EXISTS COPELA (
+                    N_Codigo INTEGER PRIMARY KEY AUTOINCREMENT,
+                    Codigo TEXT, Fecha_Registro TEXT, Operador TEXT, 
+                    N_Parrilla TEXT, Cantidad INTEGER, Material TEXT, 
+                    Prensa TEXT, Estado TEXT)""")
+                conn.commit()
+        except Exception as e:
+            print(f"Error al inicializar DB: {e}")
 
-# PANEL CENTRAL
-if st.session_state.sub_modulo == "COPELAS":
-    formulario_copelas(st.session_state.usuario)
-elif st.session_state.sub_modulo:
-    st.markdown(f'<p class="titulo-central">📍 {st.session_state.sub_modulo}</p>', unsafe_allow_html=True)
-    if st.button("⬅ VOLVER"):
-        st.session_state.sub_modulo = None
-        st.rerun()
-else:
-    st.markdown("<h2 style='text-align:center; margin-top:100px;'>Bienvenido al Panel de Control</h2>", unsafe_allow_html=True)
+    def obtener_fecha_proceso(self):
+        fecha_manual = self.ent_fec_reg.get().strip()
+        if not fecha_manual:
+            return datetime.now().strftime("%d/%m/%Y")
+        return fecha_manual
+
+    def registrar(self):
+        fecha_proceso = self.obtener_fecha_proceso()
+        
+        # 1. Preparamos el diccionario para Google Sheets
+        datos_api = {
+            "codigo": self.cb_prod.get(),
+            "fecha": fecha_proceso,
+            "operador": self.nombre_operario,
+            "n_parrilla": self.cb_parr.get(),
+            "cantidad": int(self.ent_uni.get()),
+            "material": self.ent_mat.get().upper(),
+            "prensa": self.cb_prensa.get()
+        }
+        
+        try:
+            # 2. Guardar en Base de Datos Local (SQLite)
+            with sqlite3.connect(self.db_name) as conn:
+                cur = conn.cursor()
+                cur.execute("""INSERT INTO COPELA (Codigo, Fecha_Registro, Operador, N_Parrilla, Cantidad, Material, Prensa, Estado) 
+                    VALUES (?,?,?,?,?,?,?,?)""", (datos_api["codigo"], datos_api["fecha"], datos_api["operador"], 
+                    datos_api["n_parrilla"], datos_api["cantidad"], datos_api["material"], datos_api["prensa"], "PENDIENTE"))
+                conn.commit()
+
+            # 3. ENVIAR A GOOGLE DRIVE (Sincronización)
+            exito_nube = self.enviar_a_google_sheets(datos_api)
+
+            if exito_nube:
+                messagebox.showinfo("Éxito", f"Registrado localmente y en Google Drive.\nFecha: {fecha_proceso}")
+            else:
+                messagebox.showwarning("Aviso", "Guardado localmente, pero falló la subida a Google Drive (Revisa internet).")
+
+            self.cargar_datos()
+            self.limpiar_campos()
+            
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+    def crear_interfaz(self):
+        # ... (Tu código de interfaz se mantiene igual) ...
+        # Asegúrate de que el botón REGISTRAR llame a self.registrar
+        MEDIDAS = {"width": 20, "font": ("Arial", 12)}
+        
+        header = tk.Frame(self.ventana, bg="#2f3640")
+        header.pack(fill="x", pady=10)
+        tk.Label(header, text="REGISTRO DE COPELAS", fg="white", bg="#2f3640", font=("Arial", 25, "bold")).pack()
+        
+        f_in = tk.LabelFrame(self.ventana, text=" Datos de Producción ", fg="#00d2d3", bg="#2f3640", font=("Arial", 12, "bold"), padx=15, pady=15)
+        f_in.pack(pady=10, padx=20, fill="x")
+        
+        # FILA 1
+        tk.Label(f_in, text="C/Producto:", fg="white", bg="#2f3640").grid(row=0, column=0)
+        self.cb_prod = ttk.Combobox(f_in, values=["Cod-7C", "Cod-8C", "Cod-9C", "Cod-11C", "Cod-9R"], state="readonly", **MEDIDAS)
+        self.cb_prod.grid(row=1, column=0, padx=5, pady=10)
+
+        tk.Label(f_in, text="Material:", fg="white", bg="#2f3640").grid(row=0, column=1)
+        self.ent_mat = tk.Entry(f_in, **MEDIDAS)
+        self.ent_mat.grid(row=1, column=1, padx=5, pady=10)
+
+        tk.Label(f_in, text="N° Parrilla:", fg="white", bg="#2f3640").grid(row=0, column=2)
+        self.cb_parr = ttk.Combobox(f_in, values=[f"P-{i:02d}" for i in range(1, 21)], state="readonly", **MEDIDAS)
+        self.cb_parr.grid(row=1, column=2, padx=5, pady=10)
+
+        # FILA 2
+        tk.Label(f_in, text="Cantidad:", fg="white", bg="#2f3640").grid(row=2, column=0)
+        self.ent_uni = tk.Entry(f_in, **MEDIDAS)
+        self.ent_uni.grid(row=3, column=0, padx=5, pady=10)
+
+        tk.Label(f_in, text="Prensa:", fg="white", bg="#2f3640").grid(row=2, column=1)
+        self.cb_prensa = ttk.Combobox(f_in, values=["Prensa 01", "Prensa 02", "Prensa 03"], state="readonly", **MEDIDAS)
+        self.cb_prensa.grid(row=3, column=1, padx=5, pady=10)
+
+        tk.Label(f_in, text="Fecha (DD/MM/YYYY):", fg="white", bg="#2f3640").grid(row=2, column=2)
+        self.ent_fec_reg = tk.Entry(f_in, **MEDIDAS)
+        self.ent_fec_reg.grid(row=3, column=2, padx=5, pady=10)
+
+        # TABLA
+        self.tabla = ttk.Treeview(self.ventana, columns=("ID", "Cod", "Fec", "Op", "Par", "Cant", "Mat", "Pre"), show="headings")
+        for c in self.tabla["columns"]: self.tabla.heading(c, text=c); self.tabla.column(c, width=100)
+        self.tabla.pack(expand=True, fill="both", padx=20)
+
+        # BOTÓN REGISTRAR
+        self.btn_reg = tk.Button(self.ventana, text="REGISTRAR Y SINCRONIZAR", bg="#008080", fg="white", font=("Arial", 12, "bold"), command=self.registrar)
+        self.btn_reg.pack(pady=20)
+
+    def cargar_datos(self, filtro=""):
+        for i in self.tabla.get_children(): self.tabla.delete(i)
+        with sqlite3.connect(self.db_name) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM COPELA ORDER BY N_Codigo DESC")
+            for r in cur.fetchall(): self.tabla.insert("", "end", values=r)
+
+    def limpiar_campos(self):
+        self.cb_prod.set(''); self.ent_mat.delete(0, tk.END); self.cb_parr.set('')
+        self.ent_uni.delete(0, tk.END); self.cb_prensa.set(''); self.ent_fec_reg.delete(0, tk.END)
+
+# --- INICIO ---
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.withdraw()
+    app = RegistroCopelas(root, "OPERARIO_PRUEBA")
+    root.mainloop()
