@@ -6,7 +6,7 @@ import os
 import requests
 
 # --- TU URL DE GOOGLE (Asegúrate de que sea la última implementada) ---
-URL_API = "https://script.google.com/macros/s/AKfycbzhZXSzhIT9JYVHnOaw7uzJvTb_lE7WjZTAqEUB2ki1LWlcoxFBKJPKtvRQb4e1u7_S/exec"
+URL_API = "https://script.google.com/macros/s/AKfycbxn6AAI4KCPpTgQpBcr2QGnmcKJpKmAr-Zbtv-qODtn5Q0LPcKcekOjDfXWCnliW4HC/exec"
 
 class RegistroCopelas:
     def __init__(self, root, user):
