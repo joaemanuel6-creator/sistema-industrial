@@ -1,12 +1,12 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
 import sqlite3
 from datetime import datetime
 import os
 import requests
 
-# --- PEGA AQUÍ TU NUEVA URL ---
-URL_API = "https://script.google.com/macros/s/AKfycbxZJc_-CsJsCsTM-qG6vRNDdraStXWDnng73yWiS_VyH9Incwnr4tfr9Ee0n66DIqAh/exec"
+# --- ASEGÚRATE DE QUE ESTA URL TERMINE EN /exec ---
+URL_API = "TU_URL_DE_GOOGLE_AQUÍ"
 
 class RegistroCopelas:
     def __init__(self, root, user):
@@ -18,15 +18,9 @@ class RegistroCopelas:
         self.win.state('zoomed')
         self.win.configure(bg="#1e272e")
         
-        # Pesos para que la tabla ocupe el centro
+        # Configuración para que la TABLA sea gigante y visible
         self.win.columnconfigure(0, weight=1)
         self.win.rowconfigure(1, weight=1)
-
-        # Estilo oscuro forzado
-        s = ttk.Style()
-        s.theme_use('clam')
-        s.configure("Treeview", background="#2c3e50", foreground="white", fieldbackground="#2c3e50", rowheight=28)
-        s.heading("Treeview", background="#10ac84", foreground="white", font=("Arial", 10, "bold"))
 
         self.init_db()
         self.build_ui()
@@ -40,22 +34,33 @@ class RegistroCopelas:
         c, m, q, f = self.cb_c.get(), self.e_m.get().upper(), self.e_q.get(), self.e_f.get()
         if not m or m == "MATERIAL": return
 
-        # 1. PC (Local)
+        # 1. GUARDADO LOCAL (Al instante)
         with sqlite3.connect(self.db) as conn:
             conn.execute("INSERT INTO COPELA (cod, fec, op, cant, mat) VALUES (?,?,?,?,?)", (c, f, self.user, q, m))
         
-        # 2. NUBE (Método GET - El más confiable)
-        params = {"codigo": c, "fecha": f, "operador": self.user, "cantidad": q, "material": m}
+        # 2. ENVÍO FORZADO A LA NUBE (Sin esperas)
+        params = {
+            "codigo": c, 
+            "fecha": f, 
+            "operador": self.user, 
+            "cantidad": q, 
+            "material": m,
+            "timestamp": datetime.now().timestamp() # Esto evita que Google use caché vieja
+        }
+        
         try:
-            # Enviamos los datos como parámetros de URL (GET)
+            # Usamos GET para que no haya restricciones de seguridad
             requests.get(URL_API, params=params, timeout=5)
-        except: pass 
+            print("Datos enviados a la hoja COPELAS")
+        except:
+            print("Error de conexión, pero guardado en PC")
 
         self.load_table()
-        self.e_m.delete(0, tk.END); self.e_q.delete(0, tk.END)
+        self.e_m.delete(0, tk.END)
+        self.e_q.delete(0, tk.END)
 
     def build_ui(self):
-        # Superior
+        # Panel Superior
         f1 = tk.Frame(self.win, bg="#1e272e", pady=20)
         f1.grid(row=0, column=0, sticky="ew")
         
@@ -66,12 +71,17 @@ class RegistroCopelas:
         self.e_q = tk.Entry(f1, bg="#2c3e50", fg="white", width=8); self.e_q.insert(0, "0"); self.e_q.grid(row=0, column=2, padx=5)
         self.e_f = tk.Entry(f1, bg="#2c3e50", fg="white", width=12); self.e_f.insert(0, datetime.now().strftime("%d/%m/%Y")); self.e_f.grid(row=0, column=3, padx=5)
         
-        tk.Button(f1, text="REGISTRAR", bg="#10ac84", fg="white", command=self.guardar, width=15).grid(row=0, column=4, padx=10)
+        tk.Button(f1, text="REGISTRAR", bg="#10ac84", fg="white", font=("Arial", 10, "bold"), command=self.guardar, width=15).grid(row=0, column=4, padx=10)
 
-        # Central (LA TABLA)
+        # Panel Central (TABLA)
         f2 = tk.Frame(self.win, bg="#1e272e")
         f2.grid(row=1, column=0, sticky="nsew", padx=20)
         f2.columnconfigure(0, weight=1); f2.rowconfigure(0, weight=1)
+
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure("Treeview", background="#2c3e50", foreground="white", fieldbackground="#2c3e50", rowheight=30)
+        style.heading("Treeview", background="#10ac84", foreground="white")
 
         cols = ["ID", "CÓDIGO", "FECHA", "OPERADOR", "CANT", "MATERIAL"]
         self.tree = ttk.Treeview(f2, columns=cols, show="headings")
@@ -85,7 +95,7 @@ class RegistroCopelas:
     def load_table(self):
         for i in self.tree.get_children(): self.tree.delete(i)
         with sqlite3.connect(self.db) as conn:
-            for r in conn.execute("SELECT * FROM COPELA ORDER BY id DESC"):
+            for r in conn.execute("SELECT * FROM COPELA ORDER BY id DESC LIMIT 100"):
                 self.tree.insert("", "end", values=r)
 
 if __name__ == "__main__":
