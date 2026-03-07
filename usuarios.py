@@ -2,48 +2,55 @@ import streamlit as st
 import pandas as pd
 
 def modulo_permisos_maestro(supabase):
-    st.markdown("### 🛠️ PANEL DE CONTROL DE PERMISOS")
-    st.write("Selecciona un usuario para activar o desactivar sus módulos de acceso.")
-
+    st.markdown("### 🛠️ CONTROL MAESTRO DE PERMISOS")
+    
     try:
-        # Traer todos los usuarios de la base de datos
+        # Traemos la lista de usuarios
         res = supabase.table("USUARIO").select("*").execute()
         df = pd.DataFrame(res.data)
 
         if not df.empty:
-            # Selector de usuario
-            user_to_edit = st.selectbox("👤 Seleccionar Personal para Editar:", df['ID'].tolist())
-            datos_user = df[df['ID'] == user_to_edit].iloc[0]
+            sel_user = st.selectbox("👤 Seleccionar usuario para modificar:", df['ID'].tolist())
+            datos = df[df['ID'] == sel_user].iloc[0]
 
-            with st.form("form_permisos_nube"):
-                st.info(f"Modificando a: **{datos_user.get('NOMBRES', 'Sin Nombre')}**")
+            with st.form("form_permisos_detallado"):
+                st.info(f"Editando a: **{datos.get('Nombres')} {datos.get('Apellidos')}**")
                 
-                # Lista de columnas de permisos en tu tabla de Supabase
-                permisos = ["COPELAS", "CRISOLES", "MEZCLA", "ALMACEN", "USUARIO", "MANTENIMIENTO", "HISTORIAL", "LIMPIEZA"]
-                nuevos_valores = {}
+                # LISTA EXACTA DE TUS COLUMNAS DE PERMISOS
+                columnas_permisos = [
+                    "Copela", "Crisol", "Limpieza", "Embalaje", "Mezcla", 
+                    "Zaranda", "Molino", "Usuario", "Historial", 
+                    "Observacion", "Almacen", "Mantenimiento"
+                ]
+                
+                nuevos_datos = {}
+                col1, col2, col3 = st.columns(3)
 
-                # Diseño en 2 columnas para mejor visualización
-                col1, col2 = st.columns(2)
-                
-                for i, p in enumerate(permisos):
-                    # Valor actual en la DB (1 o 0)
-                    estado_actual = 1 if datos_user.get(p) == 1 else 0
+                for i, p in enumerate(columnas_permisos):
+                    # Identificar si el permiso actual es 1 o SI
+                    valor_db = datos.get(p)
+                    estado_act = 1 if valor_db in [1, "1", "SI"] else 0
                     
-                    with col1 if i % 2 == 0 else col2:
-                        # Radio button para elegir SI o NO
-                        opcion = st.radio(f"Acceso a {p}:", ["NO", "SI"], index=estado_actual, horizontal=True)
-                        nuevos_valores[p] = 1 if opcion == "SI" else 0
+                    # Distribuir en 3 columnas para que se vea ordenado
+                    with [col1, col2, col3][i % 3]:
+                        op = st.radio(f"¿{p}?", ["NO", "SI"], index=estado_act, horizontal=True)
+                        nuevos_datos[p] = 1 if op == "SI" else 0
 
-                if st.form_submit_button("💾 APLICAR CAMBIOS EN LA NUBE"):
-                    supabase.table("USUARIO").update(nuevos_valores).eq("ID", user_to_edit).execute()
-                    st.success(f"✅ Permisos actualizados para {user_to_edit}")
+                st.divider()
+                # Campo para el tipo de usuario
+                tipo_act = datos.get('Usuario_Tipo', 'OPERARIO')
+                nuevos_datos['Usuario_Tipo'] = st.selectbox("Tipo de Usuario:", ["OPERARIO", "SUPERVISOR", "ADMIN"], 
+                                                           index=["OPERARIO", "SUPERVISOR", "ADMIN"].index(tipo_act) if tipo_act in ["OPERARIO", "SUPERVISOR", "ADMIN"] else 0)
+
+                if st.form_submit_button("💾 ACTUALIZAR PERMISOS"):
+                    supabase.table("USUARIO").update(nuevos_datos).eq("ID", sel_user).execute()
+                    st.success(f"✅ Permisos de {sel_user} actualizados correctamente.")
                     st.rerun()
         else:
-            st.warning("No se encontraron usuarios registrados.")
-            
+            st.warning("No hay usuarios registrados.")
     except Exception as e:
-        st.error(f"Error al conectar con la tabla USUARIO: {e}")
+        st.error(f"Error de conexión: {e}")
 
-    if st.button("⬅️ VOLVER AL PANEL PRINCIPAL"):
+    if st.button("⬅️ REGRESAR"):
         st.session_state.sub_modulo = None
         st.rerun()
