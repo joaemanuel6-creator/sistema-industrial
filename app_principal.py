@@ -1,85 +1,74 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
 
-# 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(page_title="SISTEMA INDUSTRIAL", page_icon="🏭", layout="centered")
+# 1. CONFIGURACIÓN
+st.set_page_config(page_title="SISTEMA INDUSTRIAL", layout="centered")
 
-# Inicializar el estado de autenticación
+# ID de tu documento de Google Sheets
+SHEET_ID = "1dKqjZESRQ8pDmILv58u8ARm5Vowix185NudbaeUNfLI"
+
 if "autenticado" not in st.session_state:
-    st.session_state.update({"autenticado": False, "usuario_nombre": ""})
+    st.session_state.update({"autenticado": False, "usuario": ""})
 
-# 2. FUNCIÓN PARA LEER HOJAS DE GOOGLE DRIVE
-def conectar_y_leer(nombre_hoja):
+# 2. FUNCIÓN DE LECTURA DIRECTA (Sin librerías de conexión)
+def leer_hoja_directo(nombre_pestaña):
     try:
-        # Creamos la conexión usando los secretos configurados
-        conn = st.connection("gsheets", type=GSheetsConnection)
+        # Construimos el link de exportación CSV para esa pestaña específica
+        url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={nombre_pestaña}"
         
-        # Leemos la pestaña específica (worksheet)
-        # ttl=0 asegura que si cambias un usuario en el Excel, se actualice al instante
-        df = conn.read(worksheet=nombre_hoja, ttl=0)
+        # Leemos con Pandas directamente desde la URL
+        df = pd.read_csv(url)
         
-        if df is not None:
-            # Limpiamos nombres de columnas (quitar espacios y poner en mayúsculas)
-            df.columns = [str(c).strip().upper() for c in df.columns]
-            # Quitamos filas vacías
-            df = df.dropna(how="all")
-            return df
-        return pd.DataFrame()
+        # Limpieza de columnas
+        df.columns = [str(c).strip().upper() for c in df.columns]
+        return df
     except Exception as e:
-        st.error(f"❌ Error al conectar con la hoja '{nombre_hoja}': {e}")
+        st.error(f"⚠️ Error al acceder a la pestaña '{nombre_pestaña}': {e}")
         return pd.DataFrame()
 
-# 3. INTERFAZ DE LOGIN (PANTALLA DE INICIO)
+# 3. INTERFAZ DE LOGIN
 if not st.session_state.autenticado:
-    st.title("🔐 ACCESO AL SISTEMA")
-    st.write("Ingrese sus credenciales para conectar con la base de datos.")
-
-    with st.form("login_form"):
-        u_input = st.text_input("ID de Usuario").strip()
-        p_input = st.text_input("Contraseña", type="password").strip()
+    st.title("🏭 ACCESO AL SISTEMA")
+    
+    with st.form("login"):
+        u_id = st.text_input("ID de Usuario").strip()
+        u_pass = st.text_input("Contraseña", type="password").strip()
         
         if st.form_submit_button("INGRESAR"):
-            # EL SISTEMA BUSCA EN LA HOJA 'USUARIO' DENTRO DEL DRIVE
-            df_usuarios = conectar_y_leer("USUARIO")
+            # Intentamos leer la hoja 'USUARIO'
+            df_u = leer_hoja_directo("USUARIO")
             
-            if not df_usuarios.empty:
-                # Verificamos que existan las columnas ID y CONTRASEÑA
-                if 'ID' in df_usuarios.columns and 'CONTRASEÑA' in df_usuarios.columns:
-                    # Buscamos coincidencia
-                    match = df_usuarios[
-                        (df_usuarios['ID'].astype(str) == u_input) & 
-                        (df_usuarios['CONTRASEÑA'].astype(str) == p_input)
+            if not df_u.empty:
+                # Verificamos si las credenciales existen
+                if 'ID' in df_u.columns and 'CONTRASEÑA' in df_u.columns:
+                    valido = df_u[
+                        (df_u['ID'].astype(str) == u_id) & 
+                        (df_u['CONTRASEÑA'].astype(str) == u_pass)
                     ]
                     
-                    if not match.empty:
+                    if not valido.empty:
                         st.session_state.autenticado = True
-                        # Suponiendo que tienes una columna NOMBRES en tu Excel
-                        nombre = match.iloc[0].get('NOMBRES', u_input)
-                        st.session_state.usuario_nombre = nombre
-                        st.success(f"✅ Bienvenida/o {nombre}")
+                        st.session_state.usuario = valido.iloc[0].get('NOMBRES', u_id)
                         st.rerun()
                     else:
-                        st.error("❌ ID o Contraseña incorrectos.")
+                        st.error("❌ Usuario o clave incorrectos.")
                 else:
-                    st.warning(f"⚠️ Estructura incorrecta en Excel. Columnas halladas: {list(df_usuarios.columns)}")
+                    st.warning(f"La hoja no tiene columnas ID/CONTRASEÑA. Columnas: {list(df_u.columns)}")
             else:
-                st.info("No se pudo leer la tabla de usuarios. Revisa los permisos de 'Compartir' en Google Drive.")
+                st.info("No se pudo conectar. Verifica que el archivo de Google Sheets sea PÚBLICO.")
     st.stop()
 
-# 4. PANEL PRINCIPAL (SI EL LOGIN ES EXITOSO)
-st.sidebar.title(f"👤 {st.session_state.usuario_nombre}")
-if st.sidebar.button("Cerrar Sesión"):
+# 4. SISTEMA PRINCIPAL
+st.sidebar.write(f"Operario: **{st.session_state.usuario}**")
+if st.sidebar.button("Salir"):
     st.session_state.clear()
     st.rerun()
 
-st.title("🏭 PANEL DE CONTROL INDUSTRIAL")
-st.write("Conexión exitosa con la hoja de cálculo.")
+st.title("✅ SISTEMA CONECTADO")
+st.write(f"Bienvenido al panel de control de producción.")
 
-# Ejemplo de interacción con otra hoja (ALMACEN o COPELA)
-if st.button("Ver Inventario"):
-    df_inv = conectar_y_leer("ALMACEN")
-    if not df_inv.empty:
-        st.dataframe(df_inv, use_container_width=True)
-    else:
-        st.warning("No hay datos en la pestaña ALMACEN.")
+# Ejemplo para ver el stock de otra pestaña llamada 'ALMACEN'
+if st.checkbox("Ver Stock Actual"):
+    df_stock = leer_hoja_directo("ALMACEN")
+    if not df_stock.empty:
+        st.table(df_stock)
