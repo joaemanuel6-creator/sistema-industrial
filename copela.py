@@ -5,30 +5,30 @@ from datetime import datetime
 import os
 import requests
 
-# --- TU URL DE GOOGLE (Asegúrate de que sea la última implementada) ---
-URL_API = "https://script.google.com/macros/s/AKfycbxn6AAI4KCPpTgQpBcr2QGnmcKJpKmAr-Zbtv-qODtn5Q0LPcKcekOjDfXWCnliW4HC/exec"
+# --- PEGA AQUÍ TU NUEVA URL DE GOOGLE ---
+URL_API = "https://script.google.com/macros/s/AKfycbwK7Jgy2Y-9NlDjz1FkSOvRS3TijyvbNv8n-ksR27rHXnnp5SMVkPqPn4kSWMhdvJRU/exec"
 
 class RegistroCopelas:
     def __init__(self, root, user):
         self.win = tk.Toplevel(root)
-        self.win.title("SISTEMA INDUSTRIAL - REGISTRO")
+        self.win.title("SISTEMA INDUSTRIAL - REGISTRO DIRECTO")
         self.user = user
         self.db = os.path.join(os.path.dirname(__file__), "mi_base_de_datos.db")
         
         self.win.state('zoomed')
         self.win.configure(bg="#1e272e")
         
-        # Configuración de expansión para que la TABLA sea visible
+        # Esto asegura que la tabla ocupe el centro
         self.win.columnconfigure(0, weight=1)
         self.win.rowconfigure(1, weight=1)
 
-        # Estilos para evitar el fondo blanco
-        style = ttk.Style()
-        style.theme_use('clam')
-        style.configure("TCombobox", fieldbackground="#2c3e50", background="#2c3e50", foreground="white")
-        style.map("TCombobox", fieldbackground=[('readonly', '#2c3e50')], foreground=[('readonly', 'white')])
-        style.configure("Treeview", background="#2c3e50", foreground="white", fieldbackground="#2c3e50", rowheight=25)
-        style.heading("Treeview", background="#10ac84", foreground="white", font=("Arial", 10, "bold"))
+        # Estilo para evitar fondos blancos
+        s = ttk.Style()
+        s.theme_use('clam')
+        s.configure("TCombobox", fieldbackground="#2c3e50", background="#2c3e50", foreground="white")
+        s.map("TCombobox", fieldbackground=[('readonly', '#2c3e50')], foreground=[('readonly', 'white')])
+        s.configure("Treeview", background="#2c3e50", foreground="white", fieldbackground="#2c3e50", rowheight=25)
+        s.heading("Treeview", background="#10ac84", foreground="white", font=("Arial", 10, "bold"))
 
         self.init_db()
         self.build_ui()
@@ -38,26 +38,27 @@ class RegistroCopelas:
         with sqlite3.connect(self.db) as conn:
             conn.execute("CREATE TABLE IF NOT EXISTS COPELA (id INTEGER PRIMARY KEY, cod TEXT, fec TEXT, op TEXT, cant INT, mat TEXT)")
 
-    def guardar(self):
+    def registrar(self):
         c, m, q, f = self.cb_c.get(), self.e_m.get().upper(), self.e_q.get(), self.e_f.get()
         if not m or m == "MATERIAL": return
 
-        # 1. PC (Local)
+        # 1. Guardar en PC
         with sqlite3.connect(self.db) as conn:
             conn.execute("INSERT INTO COPELA (cod, fec, op, cant, mat) VALUES (?,?,?,?,?)", (c, f, self.user, q, m))
         
-        # 2. NUBE (Envío directo por parámetros de URL)
-        params = {"codigo": c, "fecha": f, "operador": self.user, "cantidad": q, "material": m}
+        # 2. Enviar a Google (Sin JSON, directo por URL)
+        payload = {"codigo": c, "fecha": f, "operador": self.user, "cantidad": q, "material": m}
         try:
-            # Enviamos y NO esperamos respuesta larga para que fluya rápido
-            requests.post(URL_API, params=params, timeout=5)
-        except: pass 
+            # Enviamos los datos pegados a la URL para máxima confiabilidad
+            requests.post(URL_API, params=payload, timeout=5)
+        except:
+            pass 
 
         self.load_table()
         self.e_m.delete(0, tk.END); self.e_q.delete(0, tk.END)
 
     def build_ui(self):
-        # Panel Superior
+        # Superior: Formulario
         f1 = tk.Frame(self.win, bg="#1e272e", pady=20)
         f1.grid(row=0, column=0, sticky="ew")
         
@@ -68,23 +69,23 @@ class RegistroCopelas:
         self.e_m = tk.Entry(f1, bg="#2c3e50", fg="white", insertbackground="white", width=20)
         self.e_m.insert(0, "MATERIAL"); self.e_m.grid(row=0, column=1, padx=5)
         
-        self.e_q = tk.Entry(f1, bg="#2c3e50", fg="white", width=10)
+        self.e_q = tk.Entry(f1, bg="#2c3e50", fg="white", insertbackground="white", width=10)
         self.e_q.insert(0, "0"); self.e_q.grid(row=0, column=2, padx=5)
         
         self.e_f = tk.Entry(f1, bg="#2c3e50", fg="white", width=12)
         self.e_f.insert(0, datetime.now().strftime("%d/%m/%Y")); self.e_f.grid(row=0, column=3, padx=5)
         
-        tk.Button(f1, text="REGISTRAR", bg="#10ac84", fg="white", font=("Arial", 10, "bold"), command=self.guardar, width=15).grid(row=0, column=4, padx=10)
+        tk.Button(f1, text="REGISTRAR", bg="#10ac84", fg="white", font=("Arial", 10, "bold"), command=self.registrar, width=15).grid(row=0, column=4, padx=10)
 
-        # Panel Central (LA TABLA)
+        # Central: La Tabla (Listbox)
         f2 = tk.Frame(self.win, bg="#1e272e")
         f2.grid(row=1, column=0, sticky="nsew", padx=20)
         f2.columnconfigure(0, weight=1); f2.rowconfigure(0, weight=1)
 
         self.tree = ttk.Treeview(f2, columns=(1,2,3,4,5,6), show="headings")
-        cabeceras = ["ID", "CÓDIGO", "FECHA", "OPERADOR", "CANT", "MATERIAL"]
-        for i, text in enumerate(cabeceras, 1):
-            self.tree.heading(i, text=text)
+        cols = ["ID", "CÓDIGO", "FECHA", "OPERADOR", "CANT", "MATERIAL"]
+        for i, h in enumerate(cols, 1):
+            self.tree.heading(i, text=h)
             self.tree.column(i, anchor="center", width=100)
         
         scroll = ttk.Scrollbar(f2, orient="vertical", command=self.tree.yview)
@@ -92,7 +93,7 @@ class RegistroCopelas:
         self.tree.grid(row=0, column=0, sticky="nsew")
         scroll.grid(row=0, column=1, sticky="ns")
 
-        # Panel Inferior
+        # Inferior: Botones
         f3 = tk.Frame(self.win, bg="#1e272e", pady=20)
         f3.grid(row=2, column=0, sticky="ew")
         tk.Button(f3, text="MODIFICAR", bg="#f39c12", fg="white", width=15).grid(row=0, column=0, padx=20)
