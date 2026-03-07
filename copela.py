@@ -41,11 +41,12 @@ def leer_hoja_directo(nombre_pestaña):
 def formulario_copelas(usuario):
     st.markdown('<p class="titulo-central">📝 REGISTRO DE COPELAS</p>', unsafe_allow_html=True)
     
-    with st.form("form_copelas", clear_on_submit=True):
+    # Usamos un formulario para agrupar los datos
+    with st.form("form_registro", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
         with col1:
             codigo = st.selectbox("C/Producto:", ["Cod-7C", "Cod-8C", "Cod-9C", "Cod-11C", "Cod-9R"])
-            cantidad = st.number_input("Cantidad:", min_value=0, step=1)
+            cantidad = st.number_input("Cantidad:", min_value=1, step=1)
         with col2:
             material = st.text_input("Material:").upper()
             prensa = st.selectbox("Prensa:", ["Prensa 01", "Prensa 02", "Prensa 03", "Prensa 04", "Prensa 05"])
@@ -53,18 +54,19 @@ def formulario_copelas(usuario):
             parrilla = st.selectbox("N° Parrilla:", [f"P-{i:02d}" for i in range(1, 21)])
             fecha = st.date_input("Fecha:", datetime.now())
         
-        btn_guardar = st.form_submit_button("💾 GUARDAR EN GOOGLE DRIVE")
+        enviar = st.form_submit_button("💾 GUARDAR EN GOOGLE DRIVE")
 
-    if btn_guardar:
-        if material == "" or cantidad == 0:
-            st.error("⚠️ Por favor, completa el Material y la Cantidad.")
+    if enviar:
+        if not material:
+            st.error("⚠️ El campo Material es obligatorio.")
         else:
             try:
-                # 1. Leer datos actuales de la pestaña COPELAS
-                df_actual = conn.read(worksheet="COPELAS")
+                # 1. Intentar conectar y leer
+                conn = st.connection("gsheets", type=GSheetsConnection)
+                df_existente = conn.read(worksheet="COPELAS")
                 
                 # 2. Crear nueva fila
-                nueva_fila = pd.DataFrame([{
+                nueva_data = pd.DataFrame([{
                     "CODIGO": codigo,
                     "FECHA": fecha.strftime("%d/%m/%Y"),
                     "OPERADOR": usuario,
@@ -75,15 +77,15 @@ def formulario_copelas(usuario):
                     "ESTADO": "PENDIENTE"
                 }])
                 
-                # 3. Concatenar y actualizar
-                df_final = pd.concat([df_actual, nueva_fila], ignore_index=True)
-                conn.update(worksheet="COPELAS", data=df_final)
+                # 3. Combinar y Actualizar
+                df_actualizado = pd.concat([df_existente, nueva_data], ignore_index=True)
+                conn.update(worksheet="COPELAS", data=df_actualizado)
                 
-                st.success("✅ ¡Datos sincronizados con Google Drive exitosamente!")
+                st.success("✅ ¡Guardado exitosamente en la nube!")
                 st.balloons()
             except Exception as e:
-                st.error(f"❌ Error al conectar con Drive: {e}")
-
+                st.error(f"❌ Error de conexión: {e}")
+                st.info("Asegúrate de que la pestaña se llame exactamente 'COPELAS' en mayúsculas.")
 # 4. LÓGICA DE SESIÓN Y LOGIN (Simplificada para el ejemplo)
 if "autenticado" not in st.session_state:
     st.session_state.update({"autenticado": False, "usuario": "", "permisos": [], "sub_modulo": None})
