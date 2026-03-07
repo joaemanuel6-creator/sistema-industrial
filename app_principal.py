@@ -146,14 +146,25 @@ with st.sidebar:
                     if st.button(f"➤ {opt}", key=f"btn_{opt}"):
                         st.session_state.sub_modulo = opt
 
-# 7. PANEL CENTRAL
+# 7. PANEL CENTRAL (DERECHA)
 if st.session_state.sub_modulo:
-    st.markdown(f'<p class="titulo-central">📍 {st.session_state.sub_modulo}</p>', unsafe_allow_html=True)
-    st.divider()
-    st.write(f"Módulo activo: **{st.session_state.sub_modulo}**")
+    # LÓGICA DE APERTURA DE MÓDULOS
+    if st.session_state.sub_modulo == "Registro de Copelas":
+        formulario_copelas(st.session_state.usuario)
     
-    if st.button("⬅ VOLVER AL MENÚ"):
+    elif st.session_state.sub_modulo == "Registro de Crisoles":
+        st.markdown('<p class="titulo-central">🏺 REGISTRO DE CRISOLES</p>', unsafe_allow_html=True)
+        # Aquí llamarías a formulario_crisoles()
+        
+    elif st.session_state.sub_modulo == "Control de Mantenimiento":
+        st.markdown('<p class="titulo-central">🛠 MANTENIMIENTO</p>', unsafe_allow_html=True)
+        # Aquí la lógica de mantenimiento
+
+    # Botón para regresar al inicio
+    st.write("")
+    if st.button("⬅ VOLVER AL INICIO"):
         st.session_state.sub_modulo = None
         st.rerun()
 else:
-    st.markdown("<div style='text-align:center; margin-top:150px;'><h1 style='color:#00d2ff;'>SISTEMA INDUSTRIAL</h1><p>Panel de Control Activo</p></div>", unsafe_allow_html=True)
+    # Pantalla de Bienvenida
+    st.markdown("<div style='text-align:center; margin-top:150px;'><h1>SISTEMA INDUSTRIAL</h1><p>Seleccione una opción a la izquierda.</p></div>", unsafe_allow_html=True)
