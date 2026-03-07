@@ -7,7 +7,7 @@ import json
 import requests
 
 # --- CONFIGURACIÓN DE TU API (VERIFICADA) ---
-URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbw-ub_uSE-6NX9DcWKwHOLABXdF4633-PBgV17cyr84Z5oXBeXl79S0Zb6oeBP0_9rO/exec"
+URL_API_GOOGLE = "https://script.google.com/macros/s/AKfycbzggZNtHQJJv43ZoiO3zmQLLtcBL5O-K4S4E9_EUuV3JwfgRr7m_ww5MfSXDQjeMMSM/exec"
 
 class RegistroCopelas:
     def __init__(self, root_parent, nombre_operario):
