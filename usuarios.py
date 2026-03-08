@@ -2,55 +2,89 @@ import streamlit as st
 import pandas as pd
 
 def modulo_permisos_maestro(supabase):
-    st.markdown("### 🛠️ CONTROL MAESTRO DE PERMISOS")
-    
+    """
+    Esta función actúa como la 'ventana' de gestión de usuarios.
+    Se activa cuando el admin presiona el botón en la app principal.
+    """
+    st.markdown("<h2 style='color: #00d2ff; text-align: center;'>🛠️ GESTIÓN DE PERMISOS Y USUARIOS</h2>", unsafe_allow_html=True)
+    st.write("Seleccione un usuario para modificar su acceso a los módulos industriales.")
+
     try:
-        # Traemos la lista de usuarios
+        # 1. Obtener datos actualizados de Supabase
         res = supabase.table("USUARIO").select("*").execute()
         df = pd.DataFrame(res.data)
 
         if not df.empty:
-            sel_user = st.selectbox("👤 Seleccionar usuario para modificar:", df['ID'].tolist())
-            datos = df[df['ID'] == sel_user].iloc[0]
+            # 2. Selector de Usuario
+            user_list = df['ID'].tolist()
+            usuario_sel = st.selectbox("🔍 Buscar Usuario por ID:", user_list)
+            
+            # Extraer datos del usuario seleccionado
+            datos_u = df[df['ID'] == usuario_sel].iloc[0]
 
-            with st.form("form_permisos_detallado"):
-                st.info(f"Editando a: **{datos.get('Nombres')} {datos.get('Apellidos')}**")
+            # 3. Formulario de Edición (La Ventana)
+            with st.form("ventana_permisos", clear_on_submit=False):
+                st.markdown(f"### Perfil: {datos_u.get('Nombres')} {datos_u.get('Apellidos')}")
                 
-                # LISTA EXACTA DE TUS COLUMNAS DE PERMISOS
-                columnas_permisos = [
+                col1, col2, col3 = st.columns(3)
+                
+                # Definimos las columnas de permisos exactas de tu DB
+                permisos_lista = [
                     "Copela", "Crisol", "Limpieza", "Embalaje", "Mezcla", 
                     "Zaranda", "Molino", "Usuario", "Historial", 
                     "Observacion", "Almacen", "Mantenimiento"
                 ]
                 
-                nuevos_datos = {}
-                col1, col2, col3 = st.columns(3)
+                nuevos_permisos = {}
 
-                for i, p in enumerate(columnas_permisos):
-                    # Identificar si el permiso actual es 1 o SI
-                    valor_db = datos.get(p)
-                    estado_act = 1 if valor_db in [1, "1", "SI"] else 0
+                # Generar interruptores (Radios) para cada permiso
+                for i, permiso in enumerate(permisos_lista):
+                    # Ubicación en columnas
+                    target_col = [col1, col2, col3][i % 3]
                     
-                    # Distribuir en 3 columnas para que se vea ordenado
-                    with [col1, col2, col3][i % 3]:
-                        op = st.radio(f"¿{p}?", ["NO", "SI"], index=estado_act, horizontal=True)
-                        nuevos_datos[p] = 1 if op == "SI" else 0
+                    with target_col:
+                        # Determinar estado actual (1 = SI, 0 = NO)
+                        val_actual = 1 if datos_u.get(permiso) in [1, "1", "SI"] else 0
+                        
+                        sel = st.radio(
+                            f"**{permiso}**", 
+                            ["NO", "SI"], 
+                            index=val_actual, 
+                            horizontal=True,
+                            key=f"perm_{permiso}"
+                        )
+                        nuevos_permisos[permiso] = 1 if sel == "SI" else 0
 
                 st.divider()
-                # Campo para el tipo de usuario
-                tipo_act = datos.get('Usuario_Tipo', 'OPERARIO')
-                nuevos_datos['Usuario_Tipo'] = st.selectbox("Tipo de Usuario:", ["OPERARIO", "SUPERVISOR", "ADMIN"], 
-                                                           index=["OPERARIO", "SUPERVISOR", "ADMIN"].index(tipo_act) if tipo_act in ["OPERARIO", "SUPERVISOR", "ADMIN"] else 0)
 
-                if st.form_submit_button("💾 ACTUALIZAR PERMISOS"):
-                    supabase.table("USUARIO").update(nuevos_datos).eq("ID", sel_user).execute()
-                    st.success(f"✅ Permisos de {sel_user} actualizados correctamente.")
-                    st.rerun()
+                # Datos de Clasificación
+                c_pie1, c_pie2 = st.columns(2)
+                with c_pie1:
+                    nuevos_permisos["Usuario_Tipo"] = st.selectbox(
+                        "Categoría de Usuario", 
+                        ["OPERARIO", "SUPERVISOR", "ADMIN"],
+                        index=["OPERARIO", "SUPERVISOR", "ADMIN"].index(datos_u.get("Usuario_Tipo", "OPERARIO"))
+                    )
+                with c_pie2:
+                    nuevos_permisos["Observacion"] = st.text_input("Nota / Observación", value=datos_u.get("Observacion", ""))
+
+                # 4. Botón de Guardado
+                if st.form_submit_button("💾 GUARDAR CAMBIOS EN LA NUBE"):
+                    try:
+                        supabase.table("USUARIO").update(nuevos_permisos).eq("ID", usuario_sel).execute()
+                        st.success(f"✅ Permisos actualizados para {usuario_sel}")
+                        # Pequeña pausa para mostrar el éxito antes de recargar
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al guardar: {e}")
+
         else:
-            st.warning("No hay usuarios registrados.")
-    except Exception as e:
-        st.error(f"Error de conexión: {e}")
+            st.warning("No hay usuarios registrados en la base de datos.")
 
-    if st.button("⬅️ REGRESAR"):
+    except Exception as e:
+        st.error(f"Error de conexión con Supabase: {e}")
+
+    # Botón para cerrar la 'ventana'
+    if st.button("⬅️ VOLVER AL PANEL"):
         st.session_state.sub_modulo = None
         st.rerun()
