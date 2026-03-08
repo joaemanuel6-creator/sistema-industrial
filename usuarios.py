@@ -1,85 +1,54 @@
 import streamlit as st
-import pandas as pd
+from datetime import datetime
 
-def modulo_permisos_maestro(supabase):
-    st.markdown("### 🛠️ ADMINISTRACIÓN DE PERSONAL Y PERMISOS")
-    st.write("Desde aquí puedes activar módulos y cambiar rangos de acceso.")
+def formulario_registro(supabase):
+    """Muestra el formulario para nuevos usuarios"""
+    st.markdown("<h2 style='color: #00d2ff; text-align: center;'>📝 REGISTRO DE NUEVO USUARIO</h2>", unsafe_allow_html=True)
+    
+    with st.form("registro_usuarios_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            id_user = st.text_input("🆔 ID de Usuario (Login)").upper().strip()
+            contra = st.text_input("🔑 Contraseña", type="password")
+            nombres = st.text_input("Nombres").upper()
+            apellidos = st.text_input("Apellidos").upper()
+        
+        with col2:
+            dni = st.text_input("DNI")
+            tipo = st.selectbox("Tipo de Usuario", ["OPERARIO", "SUPERVISOR"])
+            obs = st.text_area("Observación")
+        
+        st.info("Nota: Al registrarse, sus permisos estarán desactivados hasta que un administrador los habilite.")
 
-    try:
-        # 1. Obtener datos actualizados de Supabase
-        res = supabase.table("USUARIO").select("*").execute()
-        df = pd.DataFrame(res.data)
-
-        if not df.empty:
-            # Buscador/Selector de usuario
-            st.markdown("---")
-            sel_user = st.selectbox("🔍 Buscar Usuario por ID:", df['ID'].tolist(), help="Selecciona el ID del trabajador")
-            
-            # Filtrar datos del usuario seleccionado
-            datos = df[df['ID'] == sel_user].iloc[0]
-
-            with st.form("ventana_gestion_usuarios"):
-                st.subheader(f"👤 Perfil: {datos.get('Nombres')} {datos.get('Apellidos')}")
+        if st.form_submit_button("💾 FINALIZAR REGISTRO"):
+            if id_user and contra and nombres:
+                # Preparamos los datos con tus columnas exactas
+                datos = {
+                    "ID": id_user,
+                    "Contrasena": contra,
+                    "Nombres": nombres,
+                    "Apellidos": apellidos,
+                    "DNI": dni,
+                    "Fecha_Registro": str(datetime.now().date()),
+                    "Usuario_Tipo": tipo,
+                    "Observacion": obs,
+                    # Inicializamos permisos en 0 (NO)
+                    "Copela": 0, "Crisol": 0, "Limpieza": 0, "Embalaje": 0,
+                    "Mezcla": 0, "Zaranda": 0, "Molino": 0, "Usuario": 0,
+                    "Historial": 0, "Almacen": 0, "Mantenimiento": 0
+                }
                 
-                # Layout de columnas para datos generales
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.write(f"**DNI:** {datos.get('DNI')}")
-                with c2:
-                    tipo_actual = datos.get('Usuario_Tipo', 'OPERARIO')
-                    nuevo_tipo = st.selectbox("Rango:", ["OPERARIO", "SUPERVISOR", "ADMIN"], 
-                                             index=["OPERARIO", "SUPERVISOR", "ADMIN"].index(tipo_actual) if tipo_actual in ["OPERARIO", "SUPERVISOR", "ADMIN"] else 0)
-                with c3:
-                    st.write(f"**Registro:** {datos.get('Fecha_Registro', 'N/A')}")
-
-                st.markdown("#### 🔑 PANEL DE ACCESOS")
-                
-                # Dividimos los permisos en 3 categorías lógicas
-                col_prod, col_alm, col_sis = st.columns(3)
-                
-                actualizados = {}
-
-                with col_prod:
-                    st.markdown("**📦 PRODUCCIÓN**")
-                    for p in ["Copela", "Crisol", "Mezcla", "Zaranda", "Molino"]:
-                        val = 1 if datos.get(p) in [1, "1", "SI"] else 0
-                        op = st.checkbox(p, value=(val == 1))
-                        actualizados[p] = 1 if op else 0
-
-                with col_alm:
-                    st.markdown("**🏗️ LOGÍSTICA**")
-                    for p in ["Almacen", "Embalaje", "Limpieza"]:
-                        val = 1 if datos.get(p) in [1, "1", "SI"] else 0
-                        op = st.checkbox(p, value=(val == 1))
-                        actualizados[p] = 1 if op else 0
-
-                with col_sis:
-                    st.markdown("**🖥️ SISTEMA**")
-                    for p in ["Usuario", "Historial", "Observacion", "Mantenimiento"]:
-                        val = 1 if datos.get(p) in [1, "1", "SI"] else 0
-                        op = st.checkbox(p, value=(val == 1))
-                        actualizados[p] = 1 if op else 0
-
-                # Campo de observación
-                obs_act = datos.get('Observacion', '')
-                actualizados['Observacion'] = st.text_area("Notas/Observaciones del personal", value=obs_act if obs_act else "")
-                
-                # Asignar el tipo de usuario seleccionado arriba
-                actualizados['Usuario_Tipo'] = nuevo_tipo
-
-                st.markdown("---")
-                if st.form_submit_button("💾 GUARDAR CAMBIOS EN NUBE"):
-                    # Guardar en Supabase
-                    supabase.table("USUARIO").update(actualizados).eq("ID", sel_user).execute()
-                    st.success(f"✅ ¡Éxito! Permisos actualizados para {sel_user}.")
-                    st.balloons()
+                try:
+                    supabase.table("USUARIO").insert(datos).execute()
+                    st.success("✅ ¡Registro exitoso! Ahora puedes intentar ingresar.")
+                    st.session_state.registrando = False # Volver al login
                     st.rerun()
-        else:
-            st.warning("No hay usuarios registrados en la base de datos.")
-            
-    except Exception as e:
-        st.error(f"Error de conexión con Supabase: {e}")
+                except Exception as e:
+                    st.error(f"Error: El ID ya existe o hay un problema con la base de datos.")
+            else:
+                st.warning("Por favor, complete los campos obligatorios (ID, Contraseña y Nombres).")
 
-    if st.button("⬅️ SALIR A PANEL PRINCIPAL"):
-        st.session_state.sub_modulo = None
+    if st.button("⬅️ VOLVER AL ACCESO"):
+        st.session_state.registrando = False
         st.rerun()
