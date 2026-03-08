@@ -3,14 +3,17 @@ from supabase import create_client, Client
 import os
 import sys
 
-# --- CONFIGURACIÓN DE RUTAS ---
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# --- BLOQUE DE CONEXIÓN DE ARCHIVOS ---
+# Esto obliga a Streamlit Cloud a buscar en la carpeta actual
+directorio_actual = os.path.dirname(os.path.abspath(__file__))
+if directorio_actual not in sys.path:
+    sys.path.append(directorio_actual)
 
-# Importamos la función desde usuarios.py (asegúrate que el archivo se llame usuarios.py)
+# Intentamos importar las funciones desde usuarios.py
 try:
-    from usuarios import formulario_registro
-except ImportError:
-    st.error("⚠️ No se encontró el archivo 'usuarios.py'")
+    from usuarios import formulario_registro, modulo_permisos_maestro
+except ImportError as e:
+    st.error(f"⚠️ Error Crítico: No se pudo cargar 'usuarios.py'. Detalle: {e}")
     st.stop()
 
 # --- CONEXIÓN SUPABASE ---
@@ -18,46 +21,53 @@ URL = "https://rrekwemzohknmaxzsefy.supabase.co"
 KEY = "sb_publishable_d3blWIICLZB58Drby3-Mbg_1yiZd-9J"
 supabase = create_client(URL, KEY)
 
-# Inicializar estados
-if "autenticado" not in st.session_state:
-    st.session_state.update({"autenticado": False, "usuario": "", "permisos": {}, "registrando": False})
+st.set_page_config(page_title="SISTEMA INDUSTRIAL v11", layout="centered")
 
-# --- PANTALLA DE ENTRADA ---
+# Inicializar estados de sesión
+if "autenticado" not in st.session_state:
+    st.session_state.update({"autenticado": False, "usuario": "", "permisos": {}, "registrando": False, "sub_modulo": None})
+
+# --- INTERFAZ DE ACCESO ---
 if not st.session_state.autenticado:
-    
-    # Si el usuario presionó el botón de registrar, llamamos a la función de usuarios.py
     if st.session_state.registrando:
+        # AQUÍ LLAMAMOS AL FORMULARIO DE usuarios.py
         formulario_registro(supabase)
-    
-    # Si no, mostramos el Login normal
     else:
-        st.markdown("<h1 style='text-align: center; color: #00d2ff;'>🏭 ACCESO AL SISTEMA</h1>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: #00d2ff;'>🏭 ACCESO AL SISTEMA</h2>", unsafe_allow_html=True)
+        with st.form("login"):
+            u = st.text_input("🆔 ID Usuario").upper().strip()
+            p = st.text_input("🔑 Contrasena", type="password")
+            if st.form_submit_button("INGRESAR"):
+                res = supabase.table("USUARIO").select("*").eq("ID", u).eq("Contrasena", p).execute()
+                if res.data:
+                    st.session_state.autenticado = True
+                    st.session_state.usuario = res.data[0]['Nombres']
+                    st.session_state.permisos = res.data[0]
+                    st.rerun()
+                else: st.error("❌ Credenciales incorrectas")
         
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            with st.form("login_form"):
-                u_id = st.text_input("🆔 ID USUARIO")
-                u_pass = st.text_input("🔑 CONTRASEÑA", type="password")
-                
-                if st.form_submit_button("INGRESAR"):
-                    res = supabase.table("USUARIO").select("*").eq("ID", u_id).eq("Contrasena", u_pass).execute()
-                    if res.data:
-                        st.session_state.autenticado = True
-                        st.session_state.usuario = res.data[0]['Nombres']
-                        st.session_state.permisos = res.data[0]
-                        st.rerun()
-                    else:
-                        st.error("❌ Credenciales incorrectas")
-            
-            st.write("---")
-            # EL BOTÓN QUE ACTIVA LA FUNCIÓN DE USUARIOS.PY
-            if st.button("➕ ¿NO TIENES CUENTA? REGÍSTRATE AQUÍ"):
-                st.session_state.registrando = True
-                st.rerun()
+        st.write("---")
+        if st.button("➕ REGISTRARME (SOLICITAR ACCESO)"):
+            st.session_state.registrando = True
+            st.rerun()
     st.stop()
 
-# --- PANEL PRINCIPAL (SI YA ENTRÓ) ---
-st.title(f"🚀 Bienvenido, {st.session_state.usuario}")
-if st.sidebar.button("🚪 Cerrar Sesión"):
-    st.session_state.clear()
-    st.rerun()
+# --- PANEL DE CONTROL (SI YA ESTÁ LOGUEADO) ---
+with st.sidebar:
+    st.header(f"👤 {st.session_state.usuario}")
+    if st.button("🚪 Cerrar Sesión"):
+        st.session_state.clear()
+        st.rerun()
+    st.divider()
+
+    # Botón de permisos (Solo si en DB 'Usuario' es 1)
+    if st.session_state.permisos.get("Usuario") == 1:
+        if st.button("⚙️ GESTIÓN DE PERMISOS"):
+            st.session_state.sub_modulo = "PERMISOS"
+
+# Carga de módulos
+if st.session_state.sub_modulo == "PERMISOS":
+    modulo_permisos_maestro(supabase)
+else:
+    st.title("🚀 Bienvenido")
+    st.write("Seleccione un módulo en el menú lateral para empezar.")
