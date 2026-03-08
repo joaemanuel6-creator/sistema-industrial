@@ -3,17 +3,14 @@ from supabase import create_client, Client
 import os
 import sys
 
-# --- BLOQUE DE CONEXIÓN DE ARCHIVOS ---
-# Esto obliga a Streamlit Cloud a buscar en la carpeta actual
-directorio_actual = os.path.dirname(os.path.abspath(__file__))
-if directorio_actual not in sys.path:
-    sys.path.append(directorio_actual)
+# --- CONEXIÓN DE ARCHIVOS ---
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Intentamos importar las funciones desde usuarios.py
 try:
-    from usuarios import formulario_registro, modulo_permisos_maestro
-except ImportError as e:
-    st.error(f"⚠️ Error Crítico: No se pudo cargar 'usuarios.py'. Detalle: {e}")
+    # Importamos la función de registro desde usuarios.py
+    from usuarios import formulario_crear_usuario
+except ImportError:
+    st.error("⚠️ No se encontró el archivo 'usuarios.py' en el repositorio.")
     st.stop()
 
 # --- CONEXIÓN SUPABASE ---
@@ -21,53 +18,41 @@ URL = "https://rrekwemzohknmaxzsefy.supabase.co"
 KEY = "sb_publishable_d3blWIICLZB58Drby3-Mbg_1yiZd-9J"
 supabase = create_client(URL, KEY)
 
-st.set_page_config(page_title="SISTEMA INDUSTRIAL v11", layout="centered")
-
-# Inicializar estados de sesión
 if "autenticado" not in st.session_state:
-    st.session_state.update({"autenticado": False, "usuario": "", "permisos": {}, "registrando": False, "sub_modulo": None})
+    st.session_state.update({"autenticado": False, "usuario": "", "permisos": {}, "registrando": False})
 
-# --- INTERFAZ DE ACCESO ---
+# --- LÓGICA DE PANTALLA ---
 if not st.session_state.autenticado:
+    
+    # SI EL BOTÓN FUE PRESIONADO, SE ABRE EL FORMULARIO DE usuarios.py
     if st.session_state.registrando:
-        # AQUÍ LLAMAMOS AL FORMULARIO DE usuarios.py
-        formulario_registro(supabase)
+        formulario_crear_usuario(supabase)
+    
+    # SI NO, MUESTRA EL LOGIN
     else:
-        st.markdown("<h2 style='text-align: center; color: #00d2ff;'>🏭 ACCESO AL SISTEMA</h2>", unsafe_allow_html=True)
-        with st.form("login"):
-            u = st.text_input("🆔 ID Usuario").upper().strip()
-            p = st.text_input("🔑 Contrasena", type="password")
+        st.title("🏭 BIENVENIDO AL SISTEMA")
+        with st.form("login_form"):
+            user_input = st.text_input("Usuario")
+            pass_input = st.text_input("Contrasena", type="password")
             if st.form_submit_button("INGRESAR"):
-                res = supabase.table("USUARIO").select("*").eq("ID", u).eq("Contrasena", p).execute()
+                res = supabase.table("USUARIO").select("*").eq("ID", user_input).eq("Contrasena", pass_input).execute()
                 if res.data:
                     st.session_state.autenticado = True
                     st.session_state.usuario = res.data[0]['Nombres']
                     st.session_state.permisos = res.data[0]
                     st.rerun()
-                else: st.error("❌ Credenciales incorrectas")
+                else:
+                    st.error("Datos incorrectos")
         
         st.write("---")
-        if st.button("➕ REGISTRARME (SOLICITAR ACCESO)"):
+        # BOTÓN QUE ABRE LA VENTANA DE usuarios.py
+        if st.button("➕ ¿NO TIENES CUENTA? REGÍSTRATE AQUÍ"):
             st.session_state.registrando = True
             st.rerun()
     st.stop()
 
-# --- PANEL DE CONTROL (SI YA ESTÁ LOGUEADO) ---
-with st.sidebar:
-    st.header(f"👤 {st.session_state.usuario}")
-    if st.button("🚪 Cerrar Sesión"):
-        st.session_state.clear()
-        st.rerun()
-    st.divider()
-
-    # Botón de permisos (Solo si en DB 'Usuario' es 1)
-    if st.session_state.permisos.get("Usuario") == 1:
-        if st.button("⚙️ GESTIÓN DE PERMISOS"):
-            st.session_state.sub_modulo = "PERMISOS"
-
-# Carga de módulos
-if st.session_state.sub_modulo == "PERMISOS":
-    modulo_permisos_maestro(supabase)
-else:
-    st.title("🚀 Bienvenido")
-    st.write("Seleccione un módulo en el menú lateral para empezar.")
+# --- SISTEMA ADENTRO ---
+st.success(f"Sesión iniciada como: {st.session_state.usuario}")
+if st.sidebar.button("Salir"):
+    st.session_state.clear()
+    st.rerun()
